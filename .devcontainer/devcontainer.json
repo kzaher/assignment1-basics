@@ -1,0 +1,42 @@
+{
+    "name": "CS336 Assignment 1 - Python with UV",
+    "dockerComposeFile": [
+        "docker-compose.yml"
+    ],
+    "service": "cs336-dev",
+    "workspaceFolder": "/workspace",
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true,
+            "installOhMyZsh": true,
+            "upgradePackages": true
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.debugpy",
+                "ms-toolsai.jupyter",
+                "ms-python.isort",
+                "ms-python.black-formatter",
+                "EmeryBerger.scalene",
+            ],
+            "settings": {
+                "python.formatting.provider": "black",
+                "python.defaultInterpreterPath": "/opt/venv/bin/python",
+                "python.terminal.activateEnvironment": false,
+                "python.analysis.typeCheckingMode": "basic",
+                "files.associations": {
+                    "*.lock": "toml"
+                }
+            }
+        }
+    },
+    "forwardPorts": [8000, 8888],
+    "postCreateCommand": "echo 'Container setup complete! Virtual environment is at /opt/venv'",
+    "remoteUser": "vscode"
+}

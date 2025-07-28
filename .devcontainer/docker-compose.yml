@@ -1,0 +1,24 @@
+services:
+  cs336-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.11"
+    volumes:
+      - ..:/workspace
+      - .uv-cache:/opt/uv-cache
+      - .venv:/opt/venv
+    working_dir: /workspace
+    environment:
+      - UV_CACHE_DIR=/opt/uv-cache
+      - VIRTUAL_ENV=/opt/venv
+      - PATH=/opt/venv/bin:$PATH
+    command: sleep infinity
+    user: vscode
+
+volumes:
+  .uv-cache:
+    driver: local
+  venv:
+    driver: local
