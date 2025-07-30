@@ -186,7 +186,7 @@ def train_bpe(
     special_tokens: list[str],
     num_processes=4,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    num_tasks = num_processes * 4
+    num_tasks = num_processes * 8
     with open(input_path, "rb") as f:
         boundaries = pretokenization.find_chunk_boundaries(
             f, num_tasks, "<|endoftext|>".encode("utf-8")
@@ -219,28 +219,7 @@ def train_bpe(
     all_special_token_bytes.sort(key=lambda x: x[1])
 
     def tokenize(utf8_bytes: bytes) -> tuple[int, ...]:
-        next_process = 0
-        result_tokens: list[int] = []
-        for i in range(len(utf8_bytes)):
-            if i < next_process:
-                continue
-            found_special_token = None
-            for token, special_token_bytes in all_special_token_bytes:
-                for j in range(len(special_token_bytes)):
-                    if (
-                        i + j >= len(utf8_bytes)
-                        or special_token_bytes[j] != utf8_bytes[i + j]
-                    ):
-                        break
-                if j == len(special_token_bytes):
-                    found_special_token = token
-                    next_process = i + len(special_token_bytes)
-                    break
-            if found_special_token:
-                result_tokens.append(found_special_token)
-            else:
-                result_tokens.append(inverse_vocabulary[utf8_bytes[i : i + 1]])
-        return tuple(result_tokens)
+        return tuple([inverse_vocabulary[utf8_bytes[i : i + 1]] for i in range(len(utf8_bytes))])
 
     merged_tokens = merge_tokens(
         pretoken_counts={tokenize(k): v for k, v in pretoken_counts.items()},
