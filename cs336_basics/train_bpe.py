@@ -1,5 +1,6 @@
 import regex as re
 from cs336_basics import pretokenization
+from cs336_basics import bpe_constants
 from collections import Counter
 from collections import defaultdict
 from collections import abc
@@ -7,25 +8,10 @@ import multiprocessing
 import os
 import heapq
 from functools import total_ordering
+import pickle
 
-
-def get_pretokens(input_path: str, start: int, end: int) -> Counter[bytes]:
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    with open(input_path, "rb") as f:
-        f.seek(start)
-        documents = (
-            f.read(end - start).decode("utf-8", errors="ignore").split("<|endoftext|>")
-        )
-    pretokens = Counter[bytes]()
-    for document in documents:
-        pretokens.update(
-            [pretoken.encode("utf-8") for pretoken in re.findall(PAT, document)]
-        )
-    return pretokens
-
-
-def get_pretokens_kw_args(kw_args) -> Counter[bytes]:
-    return get_pretokens(**kw_args)
+END_OF_TEXT = "<|endoftext|>"
+CACHING_COUNTS = False
 
 
 @total_ordering
@@ -139,21 +125,16 @@ def merge_tokens(
 
     def merge_pair(
         pair: tuple[int, int], merged_token: int, changed_set: set[tuple[int, int]]
-    ) -> int:
-        total_merged = 0
+    ):
         for pretokens_unique_reference in optimistic_references[pair]:
             new_value = merge_pair_in_tokens(
                 pretokens_unique_reference, pair, merged_token, changed_set
             )
-            total_merged += pretoken_counts_by_reference[pretokens_unique_reference] * (
-                len(distinct_merged_pretokens[pretokens_unique_reference])
-                - len(new_value)
-            )
             distinct_merged_pretokens[pretokens_unique_reference] = new_value
-        return total_merged
 
     merged_tokens = []
     merged_tokens_set = set()
+
     while remaining_vocab_size > 0 and queue:
         queue_element = pop_biggest_count()
         merged_pair = queue_element.reference_pair_
@@ -168,7 +149,7 @@ def merge_tokens(
         vocabulary[new_token] = vocabulary[merged_pair[0]] + vocabulary[merged_pair[1]]
         merged_tokens.append((vocabulary[merged_pair[0]], vocabulary[merged_pair[1]]))
         changed_set = set[tuple[int, int]]()
-        total_merged = merge_pair(queue_element.reference_pair_, new_token, changed_set)
+        merge_pair(queue_element.reference_pair_, new_token, changed_set)
         for pair in changed_set:
             if token_pair_counts[pair] > 0:
                 add_to_queue(token_pair_counts[pair], pair)
@@ -180,30 +161,47 @@ def merge_tokens(
     return merged_tokens
 
 
+def get_pretokens(input_path: str, start: int, end: int) -> Counter[bytes]:
+    pretokens = Counter[bytes]()
+    with open(input_path, "rb") as f:
+        boundaries = pretokenization.find_chunk_boundaries(
+            f, 16, END_OF_TEXT.encode("utf-8"), lowest_index=start, highest_index=end
+        )
+        assert boundaries[0] == start, f"boundaries={boundaries}, start={start}"
+        assert boundaries[-1] == end, f"boundaries={boundaries}, end={start}"
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            f.seek(start)
+            documents = (
+                f.read(end - start).decode("utf-8", errors="ignore").split(END_OF_TEXT)
+            )
+            for document in documents:
+                pretokens.update(
+                    [
+                        pretoken.encode("utf-8")
+                        for pretoken in re.findall(bpe_constants.PAT, document)
+                    ]
+                )
+    return pretokens
+
+
+def get_pretokens_kw_args(kw_args) -> Counter[bytes]:
+    return get_pretokens(**kw_args)
+
+
+def merge_counters(counters: list[Counter]):
+    pretoken_counts = Counter[bytes]()
+    for counter_i in counters:
+        pretoken_counts = pretoken_counts + counter_i
+    return pretoken_counts
+
+
 def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str],
-    num_processes=4,
+    num_processes=multiprocessing.cpu_count(),
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    num_tasks = num_processes * 8
-    with open(input_path, "rb") as f:
-        boundaries = pretokenization.find_chunk_boundaries(
-            f, num_tasks, "<|endoftext|>".encode("utf-8")
-        )
-
-    with multiprocessing.Pool(processes=num_processes) as pool:
-        pretoken_counters_list = pool.map(
-            get_pretokens_kw_args,
-            [
-                dict(input_path=input_path, start=start, end=end)
-                for start, end in zip(boundaries[:-1], boundaries[1:])
-            ],
-        )
-
-    pretoken_counts = Counter[bytes]()
-    for counter_i in pretoken_counters_list:
-        pretoken_counts = pretoken_counts + counter_i
+    pretoken_counts = get_pretoken_counts(input_path, num_processes)
 
     vocabulary = {index: bytes([index]) for index in range(256)}
 
@@ -219,7 +217,9 @@ def train_bpe(
     all_special_token_bytes.sort(key=lambda x: x[1])
 
     def tokenize(utf8_bytes: bytes) -> tuple[int, ...]:
-        return tuple([inverse_vocabulary[utf8_bytes[i : i + 1]] for i in range(len(utf8_bytes))])
+        return tuple(
+            [inverse_vocabulary[utf8_bytes[i : i + 1]] for i in range(len(utf8_bytes))]
+        )
 
     merged_tokens = merge_tokens(
         pretoken_counts={tokenize(k): v for k, v in pretoken_counts.items()},
@@ -231,3 +231,37 @@ def train_bpe(
         vocabulary[index] = vocabulary_special_token
 
     return (vocabulary, merged_tokens)
+
+
+def get_pretoken_counts(input_path, num_processes):
+    if CACHING_COUNTS:
+        try:
+            with open(input_path + ".pcl", "rb") as f:
+                return pickle.loads(f.read())
+        except:
+            pass
+
+    num_tasks = num_processes * 4
+    with open(input_path, "rb") as f:
+        boundaries = pretokenization.find_chunk_boundaries(
+            f, num_tasks, END_OF_TEXT.encode("utf-8")
+        )
+
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        pretoken_counters_list = pool.map(
+            get_pretokens_kw_args,
+            [
+                dict(input_path=input_path, start=start, end=end)
+                for start, end in zip(boundaries[:-1], boundaries[1:])
+            ],
+        )
+
+    pretoken_counts = Counter[bytes]()
+    for counter_i in pretoken_counters_list:
+        pretoken_counts = pretoken_counts + counter_i
+
+    if CACHING_COUNTS:
+        with open(input_path + ".pcl", "wb") as f:
+            f.write(pickle.dumps(pretoken_counts))
+
+    return pretoken_counts
