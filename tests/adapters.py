@@ -13,6 +13,7 @@ from cs336_basics.nn import linear as basics_linear
 from cs336_basics.nn import embedding as basics_embedding
 from cs336_basics.nn import rms_norm as basics_rms_norm
 from cs336_basics.nn import positionwise_feedforward as basics_ff
+from cs336_basics.nn import rope as basics_rope
 
 def run_linear(
     d_in: int,
@@ -207,7 +208,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = basics_rope.Rope(theta=theta, max_seq_len=max_seq_len, d_k=d_k)
+    return rope.forward(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
