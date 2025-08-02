@@ -12,37 +12,41 @@ class BpeTokenizer:
         merges: list[tuple[bytes, bytes]],
         special_tokens: list[str] | None = None,
     ):
-        self.vocab_ = vocab.copy()
-        self.merges_ = merges.copy()
-        self.special_tokens_ = special_tokens or []
-        self.special_tokens_bytes_ = [special_token.encode('utf-8') for special_token in self.special_tokens_]
-        self.inverse_vocab_ = {v: k for k, v in self.vocab_.items()}
-        for special_token_bytes in self.special_tokens_bytes_:
-          if special_token_bytes in self.inverse_vocab_:
+        self._vocab = vocab.copy()
+        self._merges = merges.copy()
+        self._special_tokens = special_tokens or []
+        self._special_tokens_bytes = [special_token.encode('utf-8') for special_token in self._special_tokens]
+        self._inverse_vocab = {v: k for k, v in self._vocab.items()}
+        for special_token_bytes in self._special_tokens_bytes:
+          if special_token_bytes in self._inverse_vocab:
               continue
-          self.inverse_vocab_[special_token_bytes] = len(self.vocab_)
-          self.vocab_[len(self.vocab_)] = special_token_bytes
-        self.token_merges_ = {
+          self._inverse_vocab[special_token_bytes] = len(self._vocab)
+          self._vocab[len(self._vocab)] = special_token_bytes
+        self._token_merges = {
             (
-                self.inverse_vocab_[merge[0]],
-                self.inverse_vocab_[merge[1]],
-            ): (index, self.inverse_vocab_[merge[0] + merge[1]])
-            for index, merge in enumerate(self.merges_)
+                self._inverse_vocab[merge[0]],
+                self._inverse_vocab[merge[1]],
+            ): (index, self._inverse_vocab[merge[0] + merge[1]])
+            for index, merge in enumerate(self._merges)
         }
+        self._has_special_tokens = set[str]()
+        for special_token in self._special_tokens:
+            self._has_special_tokens.add(special_token[0])
+
 
     @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
         with open(vocab_filepath, "rb") as f:
             vocab = pickle.loads(f.read())
-        with open(merges_filepath, "wb") as f:
+        with open(merges_filepath, "rb") as f:
             merges = pickle.loads(f.read())
         return BpeTokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
 
     def persist(self, vocab_filepath, merges_filepath):
         with open(vocab_filepath, "wb") as f:
-            f.write(pickle.dumps(self.vocab_))
+            f.write(pickle.dumps(self._vocab))
 
-        values = list(self.vocab_.values())
+        values = list(self._vocab.values())
         values.sort(key=lambda x: len(x))
         with open(vocab_filepath + ".txt", "wt") as f:
             for v in values:
@@ -50,10 +54,10 @@ class BpeTokenizer:
                 f.write("\n")
 
         with open(merges_filepath, "wb") as f:
-            f.write(pickle.dumps(self.merges_))
+            f.write(pickle.dumps(self._merges))
 
     def bytes_for_tokens(self, tokens):
-        return [self.vocab_[token] for token in tokens]
+        return [self._vocab[token] for token in tokens]
 
     class WorkQueue:
         def __init__(self, token_merges: dict[tuple[int, int], tuple[int, int]]):
@@ -75,7 +79,7 @@ class BpeTokenizer:
             return heapq.heappop(self.queue_)
 
     def encode_pretoken_(self, pretoken: bytes, queue: WorkQueue) -> list[int]:
-        tokens = [self.inverse_vocab_[pretoken[i : i + 1]] for i in range(len(pretoken))]
+        tokens = [self._inverse_vocab[pretoken[i : i + 1]] for i in range(len(pretoken))]
         for i in range(len(tokens) - 1):
             queue.maybe_push(i, i + 1, tokens)
 
@@ -101,7 +105,7 @@ class BpeTokenizer:
                 break
 
         return_value = [i for i in tokens if i >= 0]
-        decoded = b"".join([self.vocab_[i] for i in return_value])
+        decoded = b"".join([self._vocab[i] for i in return_value])
         assert decoded == pretoken, f"{decoded} != {pretoken}"
         return return_value
 
@@ -118,7 +122,7 @@ class BpeTokenizer:
 
     def encode(self, text: str) -> list[int]:
         tokens: list[int] = []
-        queue = BpeTokenizer.WorkQueue(self.token_merges_)
+        queue = BpeTokenizer.WorkQueue(self._token_merges)
         processed_until_index = 0
 
         def text_matches(at_index: int, value: str):
@@ -128,19 +132,21 @@ class BpeTokenizer:
           return True
 
         # Because of overlapping special tokens.
-        special_tokens_by_length = list(enumerate(self.special_tokens_))
+        special_tokens_by_length = list(enumerate(self._special_tokens))
         special_tokens_by_length.sort(key=lambda x: len(x[1]), reverse=True)
 
         for i in range(len(text)):
           if i < processed_until_index:
             continue
+          if text[i] not in self._has_special_tokens:
+              continue
           for special_token_index, special_token in special_tokens_by_length:
             if len(text) - i < len(special_token):
               continue
             if text_matches(at_index=i, value=special_token):
               tokens.extend(self.pretokenize_and_encode_(text[processed_until_index:i], queue))
               processed_until_index = i + len(special_token)
-              tokens.append(self.inverse_vocab_[self.special_tokens_bytes_[special_token_index]])
+              tokens.append(self._inverse_vocab[self._special_tokens_bytes[special_token_index]])
               break
         tokens.extend(self.pretokenize_and_encode_(text[processed_until_index:len(text)], queue))
         return tokens
@@ -152,4 +158,4 @@ class BpeTokenizer:
                 yield token
 
     def decode(self, ids: list[int]) -> str:
-        return b"".join(self.vocab_[id] for id in ids).decode("utf-8", errors="replace")
+        return b"".join(self._vocab[id] for id in ids).decode("utf-8", errors="replace")

@@ -188,13 +188,6 @@ def get_pretokens_kw_args(kw_args) -> Counter[bytes]:
     return get_pretokens(**kw_args)
 
 
-def merge_counters(counters: list[Counter]):
-    pretoken_counts = Counter[bytes]()
-    for counter_i in counters:
-        pretoken_counts = pretoken_counts + counter_i
-    return pretoken_counts
-
-
 def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
