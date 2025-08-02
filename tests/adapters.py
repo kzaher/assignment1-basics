@@ -12,6 +12,7 @@ from torch import Tensor
 from cs336_basics.nn import linear as basics_linear
 from cs336_basics.nn import embedding as basics_embedding
 from cs336_basics.nn import rms_norm as basics_rms_norm
+from cs336_basics.nn import positionwise_feedforward as basics_ff
 
 def run_linear(
     d_in: int,
@@ -33,8 +34,7 @@ def run_linear(
     """
 
     linear = basics_linear.Linear(in_features=d_in, out_features=d_out)
-    with torch.no_grad():
-        linear.w.copy_(weights)
+    linear.load_state_dict({'w': weights})
     return linear.forward(in_features)
 
 
@@ -58,8 +58,7 @@ def run_embedding(
     """
 
     embedding = basics_embedding.Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
-    with torch.no_grad():
-        embedding.embedding.copy_(weights)
+    embedding.load_state_dict({'embedding': weights})
     return embedding.forward(token_ids)
 
 
@@ -85,14 +84,13 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    # Example:
-    # If your state dict keys match, you can use `load_state_dict()`
-    # swiglu.load_state_dict(weights)
-    # You can also manually assign the weights
-    # swiglu.w1.weight.data = w1_weight
-    # swiglu.w2.weight.data = w2_weight
-    # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    swiglu = basics_ff.SwiGlu(d_model=d_model, d_ff=d_ff)
+    swiglu.load_state_dict({
+        'w1': w1_weight ,
+        'w2': w2_weight,
+        'w3': w3_weight,
+    })
+    return swiglu.forward(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -388,8 +386,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rms_norm = basics_rms_norm.RmsNorm(d_model=d_model, eps=eps)
-    with torch.no_grad():
-        rms_norm.g.copy_(weights)
+    rms_norm.load_state_dict({'g':weights})
     return rms_norm.forward(in_features)
 
 
