@@ -14,6 +14,9 @@ from cs336_basics.nn import embedding as basics_embedding
 from cs336_basics.nn import rms_norm as basics_rms_norm
 from cs336_basics.nn import positionwise_feedforward as basics_ff
 from cs336_basics.nn import rope as basics_rope
+from cs336_basics.nn import softmax as basics_softmax
+from cs336_basics.nn import scaled_dot_product_attention as basic_sdpa
+from cs336_basics.nn import multi_head_self_attention as basic_mhsa
 
 def run_linear(
     d_in: int,
@@ -112,7 +115,8 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    sdpa = basic_sdpa.ScaledDotProductAttention()
+    return sdpa.forward(Q=Q, K=K, V=V, mask=mask)
 
 
 def run_multihead_self_attention(
@@ -146,7 +150,14 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    mhsa = basic_mhsa.MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, d_key=q_proj_weight.size(-2), d_value=v_proj_weight.size(-2))
+    mhsa.load_state_dict({
+        'qw.w' : q_proj_weight,
+        'kw.w' : k_proj_weight,
+        'vw.w' : v_proj_weight,
+        'ow.w' : o_proj_weight
+    })
+    return mhsa.forward(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -186,7 +197,14 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    mhsa = basic_mhsa.MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, d_key=q_proj_weight.size(-2), d_value=v_proj_weight.size(-2), max_seq_length=max_seq_len, theta=theta)
+    mhsa.load_state_dict({
+        'qw.w' : q_proj_weight,
+        'kw.w' : k_proj_weight,
+        'vw.w' : v_proj_weight,
+        'ow.w' : o_proj_weight
+    })
+    return mhsa.forward(in_features, token_positions=token_positions)
 
 
 def run_rope(
@@ -442,8 +460,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
-
+    softmax = basics_softmax.Softmax(dim=dim)
+    return softmax.forward(in_features)
 
 def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]) -> Float[Tensor, ""]:
     """Given a tensor of inputs and targets, compute the average cross-entropy
