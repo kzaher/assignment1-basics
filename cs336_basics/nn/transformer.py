@@ -36,9 +36,14 @@ class TransformerBlock(nn.Module):
         )
 
     def forward(
-        self, x: Float[Tensor, "... sequence_length d_model"], token_positions: Int[Tensor, "... sequence_length d_model"] | None = None
+        self,
+        x: Float[Tensor, "... sequence_length d_model"],
+        token_positions: Int[Tensor, "... sequence_length d_model"] | None = None,
     ) -> Float[Tensor, "... sequence_length d_model"]:
         attention_output: Float[Tensor, "... sequence_length d_model"] = x + self.attn(
-            self.ln1(x), token_positions=torch.arange(x.size(-2)) if token_positions is None else token_positions
+            self.ln1(x),
+            token_positions=(
+                torch.arange(x.size(-2)) if token_positions is None else token_positions
+            ),
         )
         return attention_output + self.ffn(self.ln2(attention_output))
