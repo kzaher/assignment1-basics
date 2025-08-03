@@ -1,10 +1,4 @@
 # %%
-# !pip install torch
-# !pip install jaxtyping
-# !pip install numpy
-# !pip install einops
-# !pip install pandas
-# %%
 from cs336_basics.nn import extensions
 from cs336_basics.nn import linear
 from cs336_basics.nn import transformer_lm
