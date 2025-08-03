@@ -12,11 +12,13 @@ from torch import Tensor
 from cs336_basics.nn import linear as basics_linear
 from cs336_basics.nn import embedding as basics_embedding
 from cs336_basics.nn import rms_norm as basics_rms_norm
-from cs336_basics.nn import positionwise_feedforward as basics_ff
+from cs336_basics.nn import nonlinear as basics_nonlinear
 from cs336_basics.nn import rope as basics_rope
 from cs336_basics.nn import softmax as basics_softmax
 from cs336_basics.nn import scaled_dot_product_attention as basic_sdpa
 from cs336_basics.nn import multi_head_self_attention as basic_mhsa
+from cs336_basics.nn import transformer as basic_transformer
+from cs336_basics.nn import transformer_lm as basic_transformer_lm
 
 def run_linear(
     d_in: int,
@@ -38,7 +40,7 @@ def run_linear(
     """
 
     linear = basics_linear.Linear(in_features=d_in, out_features=d_out)
-    linear.load_state_dict({'w': weights})
+    linear.load_state_dict({'weight': weights})
     return linear.forward(in_features)
 
 
@@ -62,7 +64,7 @@ def run_embedding(
     """
 
     embedding = basics_embedding.Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
-    embedding.load_state_dict({'embedding': weights})
+    embedding.load_state_dict({'weight': weights})
     return embedding.forward(token_ids)
 
 
@@ -88,11 +90,11 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    swiglu = basics_ff.SwiGlu(d_model=d_model, d_ff=d_ff)
+    swiglu = basics_nonlinear.SwiGlu(d_model=d_model, d_ff=d_ff)
     swiglu.load_state_dict({
-        'w1': w1_weight ,
-        'w2': w2_weight,
-        'w3': w3_weight,
+        'w1.weight': w1_weight ,
+        'w2.weight': w2_weight,
+        'w3.weight': w3_weight,
     })
     return swiglu.forward(in_features)
 
@@ -152,10 +154,10 @@ def run_multihead_self_attention(
     """
     mhsa = basic_mhsa.MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, d_key=q_proj_weight.size(-2), d_value=v_proj_weight.size(-2))
     mhsa.load_state_dict({
-        'qw.w' : q_proj_weight,
-        'kw.w' : k_proj_weight,
-        'vw.w' : v_proj_weight,
-        'ow.w' : o_proj_weight
+        'q_proj.weight' : q_proj_weight,
+        'k_proj.weight' : k_proj_weight,
+        'v_proj.weight' : v_proj_weight,
+        'output_proj.weight' : o_proj_weight
     })
     return mhsa.forward(in_features)
 
@@ -199,10 +201,10 @@ def run_multihead_self_attention_with_rope(
     """
     mhsa = basic_mhsa.MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, d_key=q_proj_weight.size(-2), d_value=v_proj_weight.size(-2), max_seq_length=max_seq_len, theta=theta)
     mhsa.load_state_dict({
-        'qw.w' : q_proj_weight,
-        'kw.w' : k_proj_weight,
-        'vw.w' : v_proj_weight,
-        'ow.w' : o_proj_weight
+        'q_proj.weight' : q_proj_weight,
+        'k_proj.weight' : k_proj_weight,
+        'v_proj.weight' : v_proj_weight,
+        'output_proj.weight' : o_proj_weight
     })
     return mhsa.forward(in_features, token_positions=token_positions)
 
@@ -300,7 +302,15 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer_block = basic_transformer.TransformerBlock(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        max_seq_len=max_seq_len,
+        theta=theta,
+    )
+    transformer_block.load_state_dict(weights)
+    return transformer_block.forward(in_features)
 
 
 def run_transformer_lm(
@@ -382,7 +392,17 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer_lm = basic_transformer_lm.TransformerLm(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta
+    )
+    transformer_lm.load_state_dict(weights)
+    return transformer_lm.forward(in_indices)
 
 
 def run_rmsnorm(
@@ -406,7 +426,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rms_norm = basics_rms_norm.RmsNorm(d_model=d_model, eps=eps)
-    rms_norm.load_state_dict({'g':weights})
+    rms_norm.load_state_dict({'weight':weights})
     return rms_norm.forward(in_features)
 
 

@@ -12,7 +12,7 @@ class RmsNorm(nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
-        self.g = torch.nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
+        self.weight = torch.nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
         self.eps = torch.tensor(eps, device=device, dtype=torch.float32)
         self.dtype = dtype
         self.d_model = d_model
@@ -25,4 +25,4 @@ class RmsNorm(nn.Module):
             torch.einsum("...d,...d->...", x_at_least32, x_at_least32) / self.d_model
             + self.eps
         )
-        return torch.einsum("...d,...,d->...d", x, rms_inverse, self.g).to(self.dtype)
+        return torch.einsum("...d,...,d->...d", x, rms_inverse, self.weight).to(self.dtype)

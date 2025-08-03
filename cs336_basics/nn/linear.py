@@ -13,15 +13,15 @@ class Linear(nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
-        self.w = nn.Parameter(
+        self.weight = nn.Parameter(
             torch.empty(size=(out_features, in_features), device=device, dtype=dtype)
         )
         sigma = math.sqrt(2.0 / (in_features + out_features))
         torch.nn.init.trunc_normal_(
-            self.w, mean=0, std=sigma, a=-3 * sigma, b=3 * sigma
+            self.weight, mean=0, std=sigma, a=-3 * sigma, b=3 * sigma
         )
 
     def forward(
         self, x: Float[torch.Tensor, "... in_features"]
     ) -> Float[torch.Tensor, "... out_features"]:
-        return torch.einsum("...i,oi->...o", x, self.w)
+        return torch.einsum("...i,oi->...o", x, self.weight)

@@ -36,16 +36,16 @@ class MultiHeadSelfAttention(nn.Module):
         self.scaled_dot_product_attention = (
             scaled_dot_product_attention.ScaledDotProductAttention()
         )
-        self.qw = linear.Linear(
+        self.q_proj = linear.Linear(
             in_features=d_model, out_features=d_key, device=device, dtype=dtype
         )
-        self.kw = linear.Linear(
+        self.k_proj = linear.Linear(
             in_features=d_model, out_features=d_key, device=device, dtype=dtype
         )
-        self.vw = linear.Linear(
+        self.v_proj = linear.Linear(
             in_features=d_model, out_features=d_value, device=device, dtype=dtype
         )
-        self.ow = linear.Linear(
+        self.output_proj = linear.Linear(
             in_features=d_value, out_features=d_model, device=device, dtype=dtype
         )
 
@@ -55,30 +55,30 @@ class MultiHeadSelfAttention(nn.Module):
         token_positions: Int[Tensor, " ... sequence_length"] | None = None,
     ) -> Float[Tensor, "... sequence_length d_model"]:
         Q = einops.rearrange(
-            self.qw.forward(x),
+            self.q_proj(x),
             "... sequence_length (head head_dim)->... head sequence_length head_dim",
             head=self.num_heads,
         )
         K = einops.rearrange(
-            self.kw.forward(x),
+            self.k_proj(x),
             "... sequence_length (head head_dim)->... head sequence_length head_dim",
             head=self.num_heads,
         )
         V = einops.rearrange(
-            self.vw.forward(x),
+            self.v_proj(x),
             "... sequence_length (head head_dim)->... head sequence_length head_dim",
             head=self.num_heads,
         )
 
         if self.rope and token_positions is not None:
-            Q = self.rope.forward(Q, token_positions=token_positions)
-            K = self.rope.forward(K, token_positions=token_positions)
+            Q = self.rope(Q, token_positions=token_positions)
+            K = self.rope(K, token_positions=token_positions)
 
         sequence_length = x.size(-2)
         causal_mask = (
             torch.tril(torch.ones((sequence_length, sequence_length))).to(torch.bool)
         )
-        return self.ow.forward(
+        return self.output_proj(
             einops.rearrange(
                 self.scaled_dot_product_attention(Q=Q, K=K, V=V, mask=causal_mask),
                 "... head sequence_length per_head -> ... sequence_length (head per_head)",

@@ -17,4 +17,4 @@ class ScaledDotProductAttention(nn.Module):
     search = torch.einsum('...qd,...kd->...qk', Q, K)/math.sqrt(Q.size(-1))
     if mask is not None:
       search = torch.where(~mask, -torch.inf, search)
-    return torch.einsum('...qk,...kd->...qd', self.softmax.forward(search), V)
+    return torch.einsum('...qk,...kd->...qd', self.softmax(search), V)
