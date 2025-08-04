@@ -1,7 +1,9 @@
 from torch import nn
 from collections import abc
 from typing import TypeVar
+from collections import abc
 import math
+import torch
 
 T = TypeVar("T")
 
@@ -35,3 +37,24 @@ def cosine_learning_rate(
         1
         + math.cos((it - warmup_iters) / (cosine_cycle_iters - warmup_iters) * math.pi)
     ) * (max_learning_rate - min_learning_rate)
+
+
+def gradient_clipping(
+    parameters: abc.Iterable[torch.nn.Parameter], max_l2_norm: float, eps=1e-6
+):
+    total_norm = torch.linalg.vector_norm(
+        torch.tensor(
+            [
+                torch.linalg.vector_norm(parameter.grad).item()
+                for parameter in parameters
+                if parameter.grad is not None
+            ]
+        )
+    ).item()
+    if total_norm < max_l2_norm:
+        return
+
+    for parameter in parameters:
+        if parameter.grad is None:
+            continue
+        parameter.grad.data = max_l2_norm / (total_norm + eps) * parameter.grad
