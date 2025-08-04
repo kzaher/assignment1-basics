@@ -21,6 +21,7 @@ from cs336_basics.nn import transformer as basic_transformer
 from cs336_basics.nn import transformer_lm as basic_transformer_lm
 from cs336_basics.nn import cross_entropy as basic_cross_entropy
 from cs336_basics.nn import adam_w as basics_adam_w
+from cs336_basics.nn import extensions
 
 def run_linear(
     d_in: int,
@@ -546,7 +547,13 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return extensions.cosine_learning_rate(
+        it=it,
+        max_learning_rate=max_learning_rate,
+        min_learning_rate=min_learning_rate,
+        warmup_iters=warmup_iters,
+        cosine_cycle_iters=cosine_cycle_iters
+    )
 
 
 def run_save_checkpoint(
