@@ -1,9 +1,14 @@
+# %%
 from torch import nn
 from collections import abc
 from typing import TypeVar
 from collections import abc
 import math
 import torch
+import numpy.typing as npt
+from numpy.lib.stride_tricks import as_strided
+import typing
+import os
 
 T = TypeVar("T")
 
@@ -41,7 +46,7 @@ def cosine_learning_rate(
 
 def gradient_clipping(
     parameters: abc.Iterable[torch.nn.Parameter], max_l2_norm: float, eps=1e-6
-):
+) -> bool:
     total_norm = torch.linalg.vector_norm(
         torch.tensor(
             [
@@ -52,9 +57,59 @@ def gradient_clipping(
         )
     ).item()
     if total_norm < max_l2_norm:
-        return
+        return False
 
     for parameter in parameters:
         if parameter.grad is None:
             continue
         parameter.grad.data = max_l2_norm / (total_norm + eps) * parameter.grad
+
+    return True
+
+def get_batch(
+    dataset: npt.NDArray, batch_size: int, context_length: int, device: str
+) -> tuple[torch.Tensor, torch.Tensor]:
+    # print('dataset:', dataset)
+    assert len(dataset.shape) == 1
+    assert context_length <= dataset.shape[0]
+    context_strided_dataset = as_strided(
+        dataset,
+        shape=(dataset.size - context_length + 1, context_length),
+        strides=[dataset.itemsize, dataset.itemsize],
+    )
+    sample_indices = torch.randint(
+        low=0, high=context_strided_dataset.shape[0] - 1, size=(batch_size,)
+    )
+    return (
+        torch.stack(
+            [torch.tensor(context_strided_dataset[i]) for i in sample_indices], dim=0
+        ).to(device),
+        torch.stack(
+            [torch.tensor(context_strided_dataset[i + 1]) for i in sample_indices],
+            dim=0,
+        ).to(device),
+    )
+
+
+def save_checkpoint(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    iteration: int,
+    out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
+):
+    torch.save(
+        {
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "iteration": iteration,
+        },
+        out
+    )
+
+def load_checkpoint(src: str, model: nn.Module, optimizer: torch.optim.Optimizer) -> int:
+  state = torch.load(src)
+  model.load_state_dict(state['model_state'])
+  optimizer.load_state_dict(state['optimizer_state'])
+  return state['iteration']
+
+# %%

@@ -1,0 +1,26 @@
+{
+  "source_input_path": "data",
+  "checkpoint_persist_modulus": 50,
+  "optimizer_configuration": {
+
+  },
+  "transformer_llm": {
+   "vocab_size": 10000,
+    "context_length": 256,
+    "d_model": 768,
+    "num_layers": 12,
+    "num_heads": 12,
+    "d_ff": 6400,
+    "rope_theta": 10000,
+    "device": "cpu"
+  },
+  "annealing_configuration": {
+    "max_learning_rate": ,
+    "min_learning_rate": ,
+    "warmup_iters": ,
+    "cosine_cycle_iters": ,
+  },
+  "batch_size": 32,
+  "context_length": 256,
+  "max_l2_norm": 
+}

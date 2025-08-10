@@ -8,6 +8,7 @@ import dataclasses
 from collections import abc
 import pandas as pd
 import torch
+import numpy as np
 
 import importlib
 
@@ -136,6 +137,8 @@ class Node:
 for k, params in gpt2s.items():
     print(f"Model: {k}")
     instance = transformer_lm.TransformerLm(**params)
+    count_parameters = [np.prod(param.size()) for param in instance.parameters()]
+    print(f'# Params {count_parameters}')
     node = Node.build(instance)
 
     def find_flops_inject(node: Node):
@@ -168,3 +171,5 @@ for k, params in gpt2s.items():
     print(len(list(node.all())))
     gflop = node.print(get_flops)["linear_flops"].sum() / 1e9
     print(f"Gflops {gflop}")
+
+# %%
