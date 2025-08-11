@@ -8,11 +8,14 @@
     "features": {
         "ghcr.io/devcontainers/features/git:1": {},
         "ghcr.io/devcontainers/features/common-utils:2": {
-            "installZsh": true,
-            "configureZshAsDefaultShell": true,
-            "installOhMyZsh": true,
-            "upgradePackages": true
+        },
+        "ghcr.io/devcontainers/features/sshd:1": {
+            "version": "latest",
+            "password": "1234"
         }
+    },
+    "remoteEnv": {
+        "PATH": "/opt/venv/bin:${containerEnv:PATH}"
     },
     "customizations": {
         "vscode": {
@@ -22,8 +25,7 @@
                 "ms-python.debugpy",
                 "ms-toolsai.jupyter",
                 "ms-python.isort",
-                "ms-python.black-formatter",
-                "EmeryBerger.scalene",
+                "ms-python.black-formatter"
             ],
             "settings": {
                 "python.formatting.provider": "black",
@@ -36,7 +38,7 @@
             }
         }
     },
-    "forwardPorts": [8000, 8888],
-    "postCreateCommand": "echo 'Container setup complete! Virtual environment is at /opt/venv'",
+    "forwardPorts": [8000, 2222, 8888],
+    "postCreateCommand": "sudo service ssh start && echo 'Container setup complete! Virtual environment is at /opt/venv'",
     "remoteUser": "vscode"
 }

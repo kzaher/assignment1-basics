@@ -1,14 +1,24 @@
-# Use Python 3.11 as base image
+# Use NVIDIA CUDA base image with Python 3.11 for GPU support
 ARG PYTHON_VERSION=3.11
-FROM python:${PYTHON_VERSION}-slim
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
-# Install system dependencies
+# Install system dependencies and Python
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
     sudo \
     wget \
+    python3 \
+    python3-venv \
+    python3-distutils \
+    python3-pip \
+    ca-certificates \
+    coreutils \
+    util-linux \
+    # Install Node.js LTS for VS Code Remote support
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Create vscode user with sudo privileges
@@ -28,15 +38,21 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Create cache directory and virtual environment directory
 RUN mkdir -p /opt/uv-cache /opt/venv && chown -R vscode:vscode /opt/uv-cache /opt/venv
 
+# Install NVIDIA Container Toolkit requirements (runtime support)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nvidia-cuda-toolkit \
+    && rm -rf /var/lib/apt/lists/*
+
 # Switch to vscode user
 USER vscode
 WORKDIR /workspace
 
-# # Create virtual environment
-# RUN uv venv /opt/venv
+# Create virtual environment
+RUN python3 -m venv /opt/venv
 
-# # Copy dependency files first for better caching
-# COPY --chown=vscode:vscode pyproject.toml uv.lock ./
+# Upgrade pip and install torch with CUDA support
+RUN /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # # Install dependencies using uv with the lock file
 # RUN uv sync --frozen

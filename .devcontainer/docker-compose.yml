@@ -13,9 +13,16 @@ services:
     environment:
       - UV_CACHE_DIR=/opt/uv-cache
       - VIRTUAL_ENV=/opt/venv
-      - PATH=/opt/venv/bin:$PATH
+    entrypoint:
     command: sleep infinity
     user: vscode
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   .uv-cache:
