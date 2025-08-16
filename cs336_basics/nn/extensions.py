@@ -28,13 +28,16 @@ def visit(
 
 def cosine_learning_rate(
     it: int,
+    zero_iters: int,
     max_learning_rate: float,
     min_learning_rate: float,
     warmup_iters: int,
     cosine_cycle_iters: int,
 ) -> float:
+    if it < zero_iters:
+        return 0
     if it < warmup_iters:
-        return it / warmup_iters * max_learning_rate
+        return (it - zero_iters) / (warmup_iters - zero_iters) * max_learning_rate
     if it > cosine_cycle_iters:
         return min_learning_rate
 
@@ -43,10 +46,14 @@ def cosine_learning_rate(
         + math.cos((it - warmup_iters) / (cosine_cycle_iters - warmup_iters) * math.pi)
     ) * (max_learning_rate - min_learning_rate)
 
+
 def gradient_clipping(
     parameters: abc.Iterable[torch.nn.Parameter], max_l2_norm: float, eps=1e-6
 ) -> bool:
-    return gradient_clipping_with_gradient_value(parameters=parameters, max_l2_norm=max_l2_norm, eps=eps)[0]
+    return gradient_clipping_with_gradient_value(
+        parameters=parameters, max_l2_norm=max_l2_norm, eps=eps
+    )[0]
+
 
 def gradient_clipping_with_gradient_value(
     parameters: abc.Iterable[torch.nn.Parameter], max_l2_norm: float, eps=1e-6
@@ -69,6 +76,7 @@ def gradient_clipping_with_gradient_value(
         parameter.grad.data = max_l2_norm / (total_norm + eps) * parameter.grad
 
     return (True, total_norm)
+
 
 def get_batch(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
@@ -107,13 +115,17 @@ def save_checkpoint(
             "optimizer_state": optimizer.state_dict(),
             "iteration": iteration,
         },
-        out
+        out,
     )
 
-def load_checkpoint(src: str, model: nn.Module, optimizer: torch.optim.Optimizer) -> int:
-  state = torch.load(src)
-  model.load_state_dict(state['model_state'])
-  optimizer.load_state_dict(state['optimizer_state'])
-  return state['iteration']
+
+def load_checkpoint(
+    src: str, model: nn.Module, optimizer: torch.optim.Optimizer
+) -> int:
+    state = torch.load(src)
+    model.load_state_dict(state["model_state"])
+    optimizer.load_state_dict(state["optimizer_state"])
+    return state["iteration"]
+
 
 # %%

@@ -12,6 +12,7 @@ class AdamWOptimizerConfiguration:
 
 @dataclasses.dataclass(frozen=True)
 class AnnealingConfiguration:
+    zero_iters: int
     max_learning_rate: float
     min_learning_rate: float
     warmup_iters: int
@@ -52,6 +53,7 @@ class PretrainingConfiguration:
     input_path: str
     output_path: str
     training_loop: LlmPretrainingTrainingLoopConfiguration
+    checkpoint: int | None
 
     @property
     def vocabulary_path(self) -> str:

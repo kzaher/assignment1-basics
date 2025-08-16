@@ -27,6 +27,9 @@ def main(argv: abc.Sequence[str]):
     parser.add_argument(
         "--output_path", type=str, required=True, help="Output directory path"
     )
+    parser.add_argument(
+        "--checkpoint", type=int, required=False, default=None, help="Checkpoint index"
+    )
     args = parser.parse_args()
 
     with open(args.configuration_path, "rt") as f:
@@ -34,6 +37,7 @@ def main(argv: abc.Sequence[str]):
     configuration_instance = configuration.PretrainingConfiguration(
         input_path=args.input_path,
         output_path=args.output_path,
+        checkpoint=args.checkpoint,
         training_loop=configuration.LlmPretrainingTrainingLoopConfiguration.from_dict(
             json.loads(configuration_str)
         ),

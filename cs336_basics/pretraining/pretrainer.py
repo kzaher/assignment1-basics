@@ -64,31 +64,34 @@ class Pretrainer:
         )
 
     def load_latest_checkpoint(self):
-        checkpoint_power = 1
-        modulus = self._configuration.training_loop.checkpoint_persist_modulus
-        while self._checkpoint_exists(modulus**checkpoint_power):
-            checkpoint_power *= 2
-        if checkpoint_power == 1:
-            logger.info("checkpoint doesn't exist")
-            return
-        iteration_values = (
-            self._configuration.training_loop.checkpoint_persist_modulus
-            ** checkpoint_power
-        )
-        search_space = range(
-            0,
-            iteration_values,
-            self._configuration.training_loop.checkpoint_persist_modulus,
-        )
-        checkpoint_iteration = search_space[
-            bisect.bisect_left(
-                search_space,
-                x=1,
-                key=lambda i: 0 if self._checkpoint_exists(i) else 1,
+        if self._configuration.checkpoint:
+            checkpoint_path = self._checkpoint_exists(self._configuration.checkpoint)
+        else:
+            checkpoint_power = 1
+            modulus = self._configuration.training_loop.checkpoint_persist_modulus
+            while self._checkpoint_exists(modulus**checkpoint_power):
+                checkpoint_power *= 2
+            if checkpoint_power == 1:
+                logger.info("checkpoint doesn't exist")
+                return
+            iteration_values = (
+                self._configuration.training_loop.checkpoint_persist_modulus
+                ** checkpoint_power
             )
-            - 1
-        ]
-        checkpoint_path = self._checkpoint_exists(checkpoint_iteration)
+            search_space = range(
+                0,
+                iteration_values,
+                self._configuration.training_loop.checkpoint_persist_modulus,
+            )
+            checkpoint_iteration = search_space[
+                bisect.bisect_left(
+                    search_space,
+                    x=1,
+                    key=lambda i: 0 if self._checkpoint_exists(i) else 1,
+                )
+                - 1
+            ]
+            checkpoint_path = self._checkpoint_exists(checkpoint_iteration)
         assert checkpoint_path
         self._i = (
             extensions.load_checkpoint(
@@ -98,7 +101,6 @@ class Pretrainer:
         )
 
     def _persist_checkpoint(self):
-        assert not self._checkpoint_exists(self._i)
         extensions.save_checkpoint(
             self._model,
             self._optimizer,
@@ -114,6 +116,7 @@ class Pretrainer:
         )
         cosine_lr = extensions.cosine_learning_rate(
             it=self._i,
+            zero_iters=annealing_configuration.zero_iters,
             max_learning_rate=annealing_configuration.max_learning_rate,
             min_learning_rate=annealing_configuration.min_learning_rate,
             warmup_iters=annealing_configuration.warmup_iters,
@@ -245,14 +248,25 @@ class Pretrainer:
             distribution_of_gradient_values = distribution_of_gradient_values[-1000:]
 
             self._optimizer.step()
+            grads1, grads2, grads3, grads4, grads5, grads6, grads7 = (
+                statistics.quantiles(distribution_of_gradient_values, n=8)
+            )
             wandb.log(
                 {
                     "loss": loss,
                     "i": self._i,
-                    "clipped_gradients": clipped_gradients,
-                    "lr": list(self.get_lrs()),
+                    "clipped_gradients": int(clipped_gradients),
                     "lr0": list(self.get_lrs())[0],
-                    "grads": statistics.quantiles(distribution_of_gradient_values, n=8),
+                    "grad": total_gradient_value,
+                    "grads0": min(distribution_of_gradient_values),
+                    "grads1": grads1,
+                    "grads2": grads2,
+                    "grads3": grads3,
+                    "grads4": grads4,
+                    "grads5": grads5,
+                    "grads6": grads6,
+                    "grads7": grads7,
+                    "grads8": max(distribution_of_gradient_values),
                     "step_time": time.time() - start,
                 }
             )

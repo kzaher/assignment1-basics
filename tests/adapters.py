@@ -23,6 +23,7 @@ from cs336_basics.nn import cross_entropy as basic_cross_entropy
 from cs336_basics.nn import adam_w as basics_adam_w
 from cs336_basics.nn import extensions
 
+
 def run_linear(
     d_in: int,
     d_out: int,
@@ -37,13 +38,13 @@ def run_linear(
         out_dim (int): The size of the output dimension
         weights (Float[Tensor, "d_out d_in"]): The linear weights to use
         in_features (Float[Tensor, "... d_in"]): The output tensor to apply the function to
-    
+
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
     linear = basics_linear.Linear(in_features=d_in, out_features=d_out)
-    linear.load_state_dict({'weight': weights})
+    linear.load_state_dict({"weight": weights})
     return linear.forward(in_features)
 
 
@@ -61,13 +62,15 @@ def run_embedding(
         d_model (int): The size of the embedding dimension
         weights (Float[Tensor, "vocab_size d_model"]): The embedding vectors to fetch from
         token_ids (Int[Tensor, "..."]): The set of token ids to fetch from the Embedding layer
-    
+
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    embedding = basics_embedding.Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
-    embedding.load_state_dict({'weight': weights})
+    embedding = basics_embedding.Embedding(
+        num_embeddings=vocab_size, embedding_dim=d_model
+    )
+    embedding.load_state_dict({"weight": weights})
     return embedding.forward(token_ids)
 
 
@@ -94,11 +97,13 @@ def run_swiglu(
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
     swiglu = basics_nonlinear.SwiGlu(d_model=d_model, d_ff=d_ff)
-    swiglu.load_state_dict({
-        'w1.weight': w1_weight ,
-        'w2.weight': w2_weight,
-        'w3.weight': w3_weight,
-    })
+    swiglu.load_state_dict(
+        {
+            "w1.weight": w1_weight,
+            "w2.weight": w2_weight,
+            "w3.weight": w3_weight,
+        }
+    )
     return swiglu.forward(in_features)
 
 
@@ -155,13 +160,20 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    mhsa = basic_mhsa.MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, d_key=q_proj_weight.size(-2), d_value=v_proj_weight.size(-2))
-    mhsa.load_state_dict({
-        'q_proj.weight' : q_proj_weight,
-        'k_proj.weight' : k_proj_weight,
-        'v_proj.weight' : v_proj_weight,
-        'output_proj.weight' : o_proj_weight
-    })
+    mhsa = basic_mhsa.MultiHeadSelfAttention(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_key=q_proj_weight.size(-2),
+        d_value=v_proj_weight.size(-2),
+    )
+    mhsa.load_state_dict(
+        {
+            "q_proj.weight": q_proj_weight,
+            "k_proj.weight": k_proj_weight,
+            "v_proj.weight": v_proj_weight,
+            "output_proj.weight": o_proj_weight,
+        }
+    )
     return mhsa.forward(in_features)
 
 
@@ -202,13 +214,22 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    mhsa = basic_mhsa.MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads, d_key=q_proj_weight.size(-2), d_value=v_proj_weight.size(-2), max_seq_length=max_seq_len, theta=theta)
-    mhsa.load_state_dict({
-        'q_proj.weight' : q_proj_weight,
-        'k_proj.weight' : k_proj_weight,
-        'v_proj.weight' : v_proj_weight,
-        'output_proj.weight' : o_proj_weight
-    })
+    mhsa = basic_mhsa.MultiHeadSelfAttention(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_key=q_proj_weight.size(-2),
+        d_value=v_proj_weight.size(-2),
+        max_seq_length=max_seq_len,
+        theta=theta,
+    )
+    mhsa.load_state_dict(
+        {
+            "q_proj.weight": q_proj_weight,
+            "k_proj.weight": k_proj_weight,
+            "v_proj.weight": v_proj_weight,
+            "output_proj.weight": o_proj_weight,
+        }
+    )
     return mhsa.forward(in_features, token_positions=token_positions)
 
 
@@ -341,7 +362,7 @@ def run_transformer_lm(
             evenly divisible by `num_heads`.
         d_ff (int): Dimensionality of the feed-forward inner layer (section 3.3).
         rope_theta (float): The RoPE $\Theta$ parameter.
-        weights (dict[str, Tensor]): 
+        weights (dict[str, Tensor]):
             State dict of our reference implementation. {num_layers} refers to an
             integer between `0` and `num_layers - 1` (the layer index).
             The keys of this dictionary are:
@@ -402,7 +423,7 @@ def run_transformer_lm(
         num_layers=num_layers,
         num_heads=num_heads,
         d_ff=d_ff,
-        rope_theta=rope_theta
+        rope_theta=rope_theta,
     )
     transformer_lm.load_state_dict(weights)
     return transformer_lm.forward(in_indices)
@@ -429,7 +450,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rms_norm = basics_rms_norm.RmsNorm(d_model=d_model, eps=eps)
-    rms_norm.load_state_dict({'weight':weights})
+    rms_norm.load_state_dict({"weight": weights})
     return rms_norm.forward(in_features)
 
 
@@ -467,7 +488,12 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    return extensions.get_batch(dataset=dataset, batch_size=batch_size, context_length=context_length, device=device)
+    return extensions.get_batch(
+        dataset=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
+        device=device,
+    )
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -486,7 +512,10 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
     softmax = basics_softmax.Softmax(dim=dim)
     return softmax.forward(in_features)
 
-def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]) -> Float[Tensor, ""]:
+
+def run_cross_entropy(
+    inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]
+) -> Float[Tensor, ""]:
     """Given a tensor of inputs and targets, compute the average cross-entropy
     loss across examples.
 
@@ -500,10 +529,14 @@ def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: 
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
     cross_entropy = basic_cross_entropy.CrossEntropyLoss()
-    return cross_entropy.forward(inputs[torch.newaxis, ...], targets[torch.newaxis, ...])
+    return cross_entropy.forward(
+        inputs[torch.newaxis, ...], targets[torch.newaxis, ...]
+    )
 
 
-def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def run_gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
+) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -549,10 +582,11 @@ def run_get_lr_cosine_schedule(
     """
     return extensions.cosine_learning_rate(
         it=it,
+        zero_iters=0,
         max_learning_rate=max_learning_rate,
         min_learning_rate=min_learning_rate,
         warmup_iters=warmup_iters,
-        cosine_cycle_iters=cosine_cycle_iters
+        cosine_cycle_iters=cosine_cycle_iters,
     )
 
 
@@ -572,7 +606,9 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    return extensions.save_checkpoint(model=model, optimizer=optimizer, iteration=iteration, out=out)
+    return extensions.save_checkpoint(
+        model=model, optimizer=optimizer, iteration=iteration, out=out
+    )
 
 
 def run_load_checkpoint(
@@ -617,6 +653,7 @@ def get_tokenizer(
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
     from cs336_basics.bpe_tokenizer import BpeTokenizer
+
     return BpeTokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
 
 
@@ -648,4 +685,10 @@ def run_train_bpe(
                 Merges are ordered by order of creation.
     """
     from cs336_basics.train_bpe import train_bpe
-    return train_bpe(input_path=input_path, vocab_size=vocab_size, special_tokens=special_tokens, **kwargs)
+
+    return train_bpe(
+        input_path=input_path,
+        vocab_size=vocab_size,
+        special_tokens=special_tokens,
+        **kwargs,
+    )
