@@ -23,7 +23,10 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:2222:2222"
 volumes:
   .uv-cache:
     driver: local

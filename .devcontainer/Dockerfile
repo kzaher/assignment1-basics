@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     coreutils \
     util-linux \
-    # Install Node.js LTS for VS Code Remote support
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    # Install latest Node.js
+    && curl -fsSL https://deb.nodesource.com/setup_21.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -53,6 +53,9 @@ RUN python3 -m venv /opt/venv
 # Upgrade pip and install torch with CUDA support
 RUN /opt/venv/bin/pip install --upgrade pip && \
     /opt/venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+RUN sudo npm install -g @openai/codex
+RUN sudo npm install -g @google/gemini-cli
 
 # # Install dependencies using uv with the lock file
 # RUN uv sync --frozen
