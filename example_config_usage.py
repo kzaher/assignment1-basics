@@ -6,7 +6,7 @@ with full autocomplete support.
 
 import json
 from cs336_basics.experiments.configuration import (
-    LlmPretrainingConfiguration,
+    LlmPretrainingTrainingLoopConfiguration,
     OptimizerConfiguration, 
     TransformerLlmConfiguration,
     AnnealingConfiguration
@@ -45,7 +45,7 @@ def create_config_with_autocomplete():
     )
     
     # Create main config with autocomplete
-    config = LlmPretrainingConfiguration(
+    config = LlmPretrainingTrainingLoopConfiguration(
         source_input_path="data",
         configuration_path="experiments/tiny_stories.json",
         checkpoint_persist_modulus=50,
@@ -60,13 +60,13 @@ def create_config_with_autocomplete():
     return config
 
 # Method 2: Load from JSON and get typed object (partial autocomplete after loading)
-def load_config_from_json(json_path: str) -> LlmPretrainingConfiguration:
+def load_config_from_json(json_path: str) -> LlmPretrainingTrainingLoopConfiguration:
     """Load JSON and get a typed configuration object."""
     with open(json_path, 'r') as f:
         config_dict = json.load(f)
     
     # Convert to typed object - now you have autocomplete on the result!
-    config = LlmPretrainingConfiguration.from_dict(config_dict)
+    config = LlmPretrainingTrainingLoopConfiguration.from_dict(config_dict)
     return config
 
 # Method 3: Create a template generator

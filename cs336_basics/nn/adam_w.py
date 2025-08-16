@@ -48,6 +48,6 @@ class AdamW(torch.optim.Optimizer):
                     / (1 - math.pow(betas[0], t))
                 )
                 p.data -= alpha_t * p_state["m"] / (torch.sqrt(p_state["v"]) + eps)
-                p.data *= (1 - lr * weight_decay)
+                p.data *= 1 - lr * weight_decay
 
         return loss

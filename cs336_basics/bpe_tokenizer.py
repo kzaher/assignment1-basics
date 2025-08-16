@@ -15,13 +15,15 @@ class BpeTokenizer:
         self._vocab = vocab.copy()
         self._merges = merges.copy()
         self._special_tokens = special_tokens or []
-        self._special_tokens_bytes = [special_token.encode('utf-8') for special_token in self._special_tokens]
+        self._special_tokens_bytes = [
+            special_token.encode("utf-8") for special_token in self._special_tokens
+        ]
         self._inverse_vocab = {v: k for k, v in self._vocab.items()}
         for special_token_bytes in self._special_tokens_bytes:
-          if special_token_bytes in self._inverse_vocab:
-              continue
-          self._inverse_vocab[special_token_bytes] = len(self._vocab)
-          self._vocab[len(self._vocab)] = special_token_bytes
+            if special_token_bytes in self._inverse_vocab:
+                continue
+            self._inverse_vocab[special_token_bytes] = len(self._vocab)
+            self._vocab[len(self._vocab)] = special_token_bytes
         self._token_merges = {
             (
                 self._inverse_vocab[merge[0]],
@@ -32,7 +34,6 @@ class BpeTokenizer:
         self._has_special_tokens = set[str]()
         for special_token in self._special_tokens:
             self._has_special_tokens.add(special_token[0])
-
 
     @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
@@ -79,7 +80,9 @@ class BpeTokenizer:
             return heapq.heappop(self.queue_)
 
     def encode_pretoken_(self, pretoken: bytes, queue: WorkQueue) -> list[int]:
-        tokens = [self._inverse_vocab[pretoken[i : i + 1]] for i in range(len(pretoken))]
+        tokens = [
+            self._inverse_vocab[pretoken[i : i + 1]] for i in range(len(pretoken))
+        ]
         for i in range(len(tokens) - 1):
             queue.maybe_push(i, i + 1, tokens)
 
@@ -126,31 +129,40 @@ class BpeTokenizer:
         processed_until_index = 0
 
         def text_matches(at_index: int, value: str):
-          for j in range(len(value)):
-            if value[j] != text[at_index + j]:
-              return False
-          return True
+            for j in range(len(value)):
+                if value[j] != text[at_index + j]:
+                    return False
+            return True
 
         # Because of overlapping special tokens.
         special_tokens_by_length = list(enumerate(self._special_tokens))
         special_tokens_by_length.sort(key=lambda x: len(x[1]), reverse=True)
 
         for i in range(len(text)):
-          if i < processed_until_index:
-            continue
-          if text[i] not in self._has_special_tokens:
-              continue
-          for special_token_index, special_token in special_tokens_by_length:
-            if len(text) - i < len(special_token):
-              continue
-            if text_matches(at_index=i, value=special_token):
-              tokens.extend(self.pretokenize_and_encode_(text[processed_until_index:i], queue))
-              processed_until_index = i + len(special_token)
-              tokens.append(self._inverse_vocab[self._special_tokens_bytes[special_token_index]])
-              break
-        tokens.extend(self.pretokenize_and_encode_(text[processed_until_index:len(text)], queue))
+            if i < processed_until_index:
+                continue
+            if text[i] not in self._has_special_tokens:
+                continue
+            for special_token_index, special_token in special_tokens_by_length:
+                if len(text) - i < len(special_token):
+                    continue
+                if text_matches(at_index=i, value=special_token):
+                    tokens.extend(
+                        self.pretokenize_and_encode_(
+                            text[processed_until_index:i], queue
+                        )
+                    )
+                    processed_until_index = i + len(special_token)
+                    tokens.append(
+                        self._inverse_vocab[
+                            self._special_tokens_bytes[special_token_index]
+                        ]
+                    )
+                    break
+        tokens.extend(
+            self.pretokenize_and_encode_(text[processed_until_index : len(text)], queue)
+        )
         return tokens
-        
 
     def encode_iterable(self, iterable: abc.Iterable[str]) -> abc.Iterator[int]:
         for i in iterable:

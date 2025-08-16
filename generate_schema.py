@@ -7,7 +7,7 @@ import json
 import dataclasses
 from typing import get_type_hints, get_origin, get_args
 from cs336_basics.experiments.configuration import (
-    LlmPretrainingConfiguration,
+    LlmPretrainingTrainingLoopConfiguration,
     OptimizerConfiguration,
     TransformerLlmConfiguration, 
     AnnealingConfiguration
@@ -93,7 +93,7 @@ def convert_type_to_schema(field_type) -> dict:
 
 def generate_config_schema():
     """Generate complete JSON schema for the configuration."""
-    return dataclass_to_json_schema(LlmPretrainingConfiguration)
+    return dataclass_to_json_schema(LlmPretrainingTrainingLoopConfiguration)
 
 def save_schema_file(schema_path: str = "/workspace/config_schema.json"):
     """Save the JSON schema to a file for IDE integration."""

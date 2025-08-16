@@ -10,7 +10,7 @@ import heapq
 from functools import total_ordering
 import pickle
 
-END_OF_TEXT = "<|endoftext|>"
+END_OF_TEXT = bpe_constants.END_OF_TEXT
 CACHING_COUNTS = False
 
 
@@ -192,7 +192,7 @@ def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str],
-    num_processes=multiprocessing.cpu_count(),
+    num_processes=min(multiprocessing.cpu_count(), 8),
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     pretoken_counts = get_pretoken_counts(input_path, num_processes)
 

@@ -1,0 +1,272 @@
+from cs336_basics.pretraining import configuration
+from cs336_basics.nn import extensions
+from cs336_basics.nn import transformer_lm
+from cs336_basics.nn import adam_w
+from cs336_basics.nn import cross_entropy
+from cs336_basics import pretokenization
+import os
+import logging
+import bisect
+import numpy as np
+import torch
+import time
+from torch import Tensor
+from jaxtyping import Int
+from cs336_basics.train_bpe import train_bpe
+from cs336_basics.bpe_tokenizer import BpeTokenizer
+from cs336_basics import bpe_constants
+import logging, sys
+import multiprocessing
+import functools
+import statistics
+import wandb
+import datetime
+import dataclasses
+
+logger = logging.getLogger(__name__)
+
+
+class Pretrainer:
+    def __init__(self, configuration: configuration.PretrainingConfiguration):
+        self._configuration = configuration
+        lm_configuration = configuration.training_loop.transformer_llm
+        self._i = 0
+        self._model = transformer_lm.TransformerLm(
+            vocab_size=lm_configuration.vocab_size,
+            context_length=lm_configuration.context_length,
+            d_model=lm_configuration.d_model,
+            num_layers=lm_configuration.num_layers,
+            num_heads=lm_configuration.num_heads,
+            d_ff=lm_configuration.d_ff,
+            rope_theta=lm_configuration.rope_theta,
+            device=lm_configuration.device,
+            dtype=getattr(torch, lm_configuration.dtype or "float32"),
+        )
+        optimizer_configuration = (
+            configuration.training_loop.adamw_optimizer_configuration
+        )
+        assert len(optimizer_configuration.betas) == 2
+        self._optimizer = adam_w.AdamW(
+            self._model.parameters(),
+            lr=optimizer_configuration.lr,
+            weight_decay=optimizer_configuration.weight_decay,
+            betas=(optimizer_configuration.betas[0], optimizer_configuration.betas[1]),
+            eps=optimizer_configuration.eps,
+        )
+
+        self._model.register_buffer("start_time", torch.tensor(time.time()))
+
+    def _checkpoint_exists(self, i: int) -> str | None:
+        return (
+            self._configuration.checkpoint_path(i)
+            if os.path.exists(self._configuration.checkpoint_written_path(i))
+            else None
+        )
+
+    def load_latest_checkpoint(self):
+        checkpoint_power = 1
+        modulus = self._configuration.training_loop.checkpoint_persist_modulus
+        while self._checkpoint_exists(modulus**checkpoint_power):
+            checkpoint_power *= 2
+        if checkpoint_power == 1:
+            logger.info("checkpoint doesn't exist")
+            return
+        iteration_values = (
+            self._configuration.training_loop.checkpoint_persist_modulus
+            ** checkpoint_power
+        )
+        search_space = range(
+            0,
+            iteration_values,
+            self._configuration.training_loop.checkpoint_persist_modulus,
+        )
+        checkpoint_iteration = search_space[
+            bisect.bisect_left(
+                search_space,
+                x=1,
+                key=lambda i: 0 if self._checkpoint_exists(i) else 1,
+            )
+            - 1
+        ]
+        checkpoint_path = self._checkpoint_exists(checkpoint_iteration)
+        assert checkpoint_path
+        self._i = (
+            extensions.load_checkpoint(
+                src=checkpoint_path, model=self._model, optimizer=self._optimizer
+            )
+            + 1
+        )
+
+    def _persist_checkpoint(self):
+        assert not self._checkpoint_exists(self._i)
+        extensions.save_checkpoint(
+            self._model,
+            self._optimizer,
+            self._i,
+            out=self._configuration.checkpoint_path(self._i),
+        )
+        with open(self._configuration.checkpoint_written_path(self._i), "wb") as f:
+            pass
+
+    def _set_annealed_learning_rate(self):
+        annealing_configuration = (
+            self._configuration.training_loop.annealing_configuration
+        )
+        cosine_lr = extensions.cosine_learning_rate(
+            it=self._i,
+            max_learning_rate=annealing_configuration.max_learning_rate,
+            min_learning_rate=annealing_configuration.min_learning_rate,
+            warmup_iters=annealing_configuration.warmup_iters,
+            cosine_cycle_iters=annealing_configuration.cosine_cycle_iters,
+        )
+        for pg in self._optimizer.param_groups:
+            pg["lr"] = cosine_lr
+
+    def train_tokenizer(self):
+        vocabulary, merges = train_bpe(
+            input_path=self._configuration.input_path,
+            vocab_size=self._configuration.training_loop.transformer_llm.vocab_size,
+            special_tokens=[bpe_constants.END_OF_TEXT],
+        )
+
+        tokenizer = BpeTokenizer(vocab=vocabulary, merges=merges)
+        tokenizer.persist(*self._configuration.tokenizer_path)
+
+    def get_tokenizer(self) -> BpeTokenizer:
+        if not os.path.exists(self._configuration.tokenizer_path[0]):
+            logger.info("Training bpe tokenizer")
+            self.train_tokenizer()
+
+        return BpeTokenizer.from_files(*self._configuration.tokenizer_path)
+
+    @classmethod
+    def _encode(
+        cls,
+        file_range: tuple[int, int],
+        tokenizer: BpeTokenizer,
+        configuration: configuration.PretrainingConfiguration,
+    ):
+        start, end = file_range
+        logger.info("Starting worker")
+        with open(configuration.input_path, "rt") as f:
+            f.seek(start)
+            result = tokenizer.encode(f.read(end - start))
+            logger.info("Worker tokenized")
+            return result
+
+    def tokenize_input(self):
+        tokenizer = self.get_tokenizer()
+        num_processes = min(multiprocessing.cpu_count(), 12)
+        with open(self._configuration.input_path, "rb") as f:
+            boundaries = pretokenization.find_chunk_boundaries(
+                f,
+                num_processes * 8,
+                bpe_constants.END_OF_TEXT.encode("utf-8"),
+            )
+
+        with multiprocessing.Pool(processes=num_processes) as pool:
+            token_segments = pool.map(
+                functools.partial(
+                    Pretrainer._encode,
+                    tokenizer=tokenizer,
+                    configuration=self._configuration,
+                ),
+                [(start, end) for start, end in zip(boundaries[:-1], boundaries[1:])],
+            )
+
+        dtype = (
+            np.int16
+            if self._configuration.training_loop.transformer_llm.vocab_size < (1 << 15)
+            else np.int32
+        )
+        logger.info("Saving input tokens")
+        np.save(
+            self._configuration.tokenized_input_path,
+            np.array(
+                [token for tokens in token_segments for token in tokens], dtype=dtype
+            ),
+        )
+
+    def get_tokenized_input(self):
+        if not os.path.exists(self._configuration.tokenized_input_path):
+            logger.info("Creating tokenized input")
+            self.tokenize_input()
+
+        return np.load(self._configuration.tokenized_input_path, mmap_mode="r")
+
+    def get_lrs(self):
+        return set([pg["lr"] for pg in self._optimizer.param_groups])
+
+    def train(self):
+        wandb.init(
+            # Set the project where this run will be logged
+            project=self._configuration.training_loop.name,
+            # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
+            name=f"experiment_{self._model.start_time.item()} ({datetime.datetime.fromtimestamp(self._model.start_time.item(), datetime.timezone.utc)})",
+            config=dataclasses.asdict(self._configuration),
+        )
+        os.makedirs(self._configuration.output_path, exist_ok=True)
+        os.makedirs(self._configuration.checkpoint_dir, exist_ok=True)
+
+        tokenized_input = self.get_tokenized_input()
+        assert (
+            np.max(tokenized_input)
+            < self._configuration.training_loop.transformer_llm.vocab_size
+        )
+        logger.info("Checked tokens are valid")
+
+        cross_entropy_loss = cross_entropy.CrossEntropyLoss()
+        total_gradient_value = 1e6
+        distribution_of_gradient_values = []
+        while True:
+            start = time.time()
+            self._optimizer.zero_grad()
+            self._set_annealed_learning_rate()
+            (input, target) = extensions.get_batch(
+                tokenized_input,
+                batch_size=self._configuration.training_loop.batch_size,
+                context_length=self._configuration.training_loop.context_length,
+                device=self._configuration.training_loop.transformer_llm.device,
+            )
+            loss = cross_entropy_loss(
+                self._model(input.to(torch.int64)),
+                target=target.to(torch.int64).to(
+                    device=self._configuration.training_loop.transformer_llm.device,
+                ),
+            )
+            loss.backward()
+            (clipped_gradients, total_gradient_value) = (
+                extensions.gradient_clipping_with_gradient_value(
+                    self._model.parameters(),
+                    max_l2_norm=self._configuration.training_loop.initial_max_l2_norm,
+                )
+            )
+            distribution_of_gradient_values.append(total_gradient_value)
+            distribution_of_gradient_values = distribution_of_gradient_values[-1000:]
+
+            self._optimizer.step()
+            wandb.log(
+                {
+                    "loss": loss,
+                    "i": self._i,
+                    "clipped_gradients": clipped_gradients,
+                    "lr": list(self.get_lrs()),
+                    "lr0": list(self.get_lrs())[0],
+                    "grads": statistics.quantiles(distribution_of_gradient_values, n=8),
+                    "step_time": time.time() - start,
+                }
+            )
+            if (
+                self._i
+                and self._i
+                % self._configuration.training_loop.checkpoint_persist_modulus
+                == 0
+            ):
+                start_save = time.time()
+                self._persist_checkpoint()
+                wandb.log(
+                    {
+                        "checkpoint_save_time": time.time() - start_save,
+                    }
+                )
+            self._i += 1

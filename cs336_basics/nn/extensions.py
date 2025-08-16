@@ -43,10 +43,14 @@ def cosine_learning_rate(
         + math.cos((it - warmup_iters) / (cosine_cycle_iters - warmup_iters) * math.pi)
     ) * (max_learning_rate - min_learning_rate)
 
-
 def gradient_clipping(
     parameters: abc.Iterable[torch.nn.Parameter], max_l2_norm: float, eps=1e-6
 ) -> bool:
+    return gradient_clipping_with_gradient_value(parameters=parameters, max_l2_norm=max_l2_norm, eps=eps)[0]
+
+def gradient_clipping_with_gradient_value(
+    parameters: abc.Iterable[torch.nn.Parameter], max_l2_norm: float, eps=1e-6
+) -> tuple[bool, float]:
     total_norm = torch.linalg.vector_norm(
         torch.tensor(
             [
@@ -57,14 +61,14 @@ def gradient_clipping(
         )
     ).item()
     if total_norm < max_l2_norm:
-        return False
+        return (False, total_norm)
 
     for parameter in parameters:
         if parameter.grad is None:
             continue
         parameter.grad.data = max_l2_norm / (total_norm + eps) * parameter.grad
 
-    return True
+    return (True, total_norm)
 
 def get_batch(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str

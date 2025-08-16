@@ -23,6 +23,7 @@ class MultiHeadSelfAttention(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.num_heads = num_heads
+        self.device = device
         assert d_model % num_heads == 0
         if theta and max_seq_length:
             self.rope = rope.Rope(
@@ -30,6 +31,7 @@ class MultiHeadSelfAttention(nn.Module):
                 d_k=d_model // num_heads,
                 max_seq_len=max_seq_length,
                 device=device,
+                dtype=dtype,
             )
         else:
             self.rope = None
@@ -75,9 +77,9 @@ class MultiHeadSelfAttention(nn.Module):
             K = self.rope(K, token_positions=token_positions)
 
         sequence_length = x.size(-2)
-        causal_mask = (
-            torch.tril(torch.ones((sequence_length, sequence_length))).to(torch.bool)
-        )
+        causal_mask = torch.tril(
+            torch.ones((sequence_length, sequence_length), device=self.device)
+        ).to(torch.bool)
         return self.output_proj(
             einops.rearrange(
                 self.scaled_dot_product_attention(Q=Q, K=K, V=V, mask=causal_mask),

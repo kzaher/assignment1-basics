@@ -4,14 +4,22 @@ from dataclasses import dataclass, fields, is_dataclass
 from typing import List, Dict, get_origin, get_args
 import json
 
+
 def from_str(cls, data: str):
-  return from_dict(cls, json.loads(data))
+    return from_dict(cls, json.loads(data))
+
 
 def from_dict(cls, data: dict):
     if not is_dataclass(cls):
         return data  # Primitive case
 
     fieldtypes = {f.name: f.type for f in fields(cls)}
+    # # Use get_type_hints to resolve string annotations to actual types
+    # try:
+    #     fieldtypes = typing.get_type_hints(cls)
+    # except (NameError, AttributeError):
+    #     # Fallback to raw field types if get_type_hints fails
+    #     fieldtypes = {f.name: f.type for f in fields(cls)}
     kwargs = {}
 
     for field_name, field_type in fieldtypes.items():
@@ -34,13 +42,13 @@ def from_dict(cls, data: dict):
             for k, v in value.items():
                 # Convert key to the appropriate type
                 deserialized_key = key_type(k)
-                
+
                 # Convert value (dataclass or primitive)
                 if is_dataclass(val_type):
                     deserialized_value = from_dict(val_type, v)
                 else:
                     deserialized_value = val_type(v)
-                
+
                 new_dict[deserialized_key] = deserialized_value
             kwargs[field_name] = new_dict
 
@@ -54,27 +62,31 @@ def from_dict(cls, data: dict):
 
     return cls(**kwargs)
 
+
 def as_dict(o: object) -> dict:
-  return dataclasses.asdict(o)
+    return dataclasses.asdict(o)
+
 
 def as_str(o: object) -> str:
-  return json.dumps(as_dict(o))
+    return json.dumps(as_dict(o))
+
 
 if test := False:
-  @dataclass
-  class Address:
-      street: str
-      city: str
-      zip_code: str
 
-  @dataclass
-  class Person:
-      name: str
-      age: int
-      addresses: List[Address]
-      address_book: Dict[int, Address]  # Dict with int keys now!
+    @dataclass
+    class Address:
+        street: str
+        city: str
+        zip_code: str
 
-  json_data = '''
+    @dataclass
+    class Person:
+        name: str
+        age: int
+        addresses: List[Address]
+        address_book: Dict[int, Address]  # Dict with int keys now!
+
+    json_data = """
   {
       "name": "Alice",
       "age": 30,
@@ -98,10 +110,10 @@ if test := False:
           }
       }
   }
-  '''
+  """
 
-  person = from_str(Person, json_data)
+    person = from_str(Person, json_data)
 
-  print(person)
-  print(from_str(Person, as_str(person)) == person)
-  # %%
+    print(person)
+    print(from_str(Person, as_str(person)) == person)
+    # %%

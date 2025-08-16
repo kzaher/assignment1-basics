@@ -11,6 +11,7 @@ class Rope(nn.Module):
         d_k: int,
         max_seq_len: int,
         device: torch.types.Device = None,
+        dtype: torch.dtype | None = None,
     ):
         super().__init__()
         assert d_k % 2 == 0
@@ -28,8 +29,12 @@ class Rope(nn.Module):
         )
         rs: Float[torch.Tensor, "max_seq_len d_k 2 2"] = torch.stack(
             [
-                torch.stack([torch.cos(thetas), -torch.sin(thetas)], dim=-1),
-                torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1),
+                torch.stack(
+                    [torch.cos(thetas).to(dtype), -torch.sin(thetas).to(dtype)], dim=-1
+                ),
+                torch.stack(
+                    [torch.sin(thetas).to(dtype), torch.cos(thetas).to(dtype)], dim=-1
+                ),
             ],
             dim=-2,
         )

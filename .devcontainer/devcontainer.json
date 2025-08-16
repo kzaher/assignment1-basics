@@ -7,8 +7,7 @@
     "workspaceFolder": "/workspace",
     "features": {
         "ghcr.io/devcontainers/features/git:1": {},
-        "ghcr.io/devcontainers/features/common-utils:2": {
-        },
+        "ghcr.io/devcontainers/features/common-utils:2": {},
         "ghcr.io/devcontainers/features/sshd:1": {
             "version": "latest",
             "password": "1234",
@@ -39,7 +38,11 @@
             }
         }
     },
-    "forwardPorts": [8000, 2222, 8888],
+    "forwardPorts": [
+        8000,
+        2222,
+        8888
+    ],
     "portsAttributes": {
         "2222": {
             "label": "SSH"
