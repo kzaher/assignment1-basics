@@ -13,9 +13,10 @@ class AdamWOptimizerConfiguration:
 @dataclasses.dataclass(frozen=True)
 class AnnealingConfiguration:
     zero_iters: int
+    warmup_iters: int
+    use_cosine_rampup: bool
     max_learning_rate: float
     min_learning_rate: float
-    warmup_iters: int
     cosine_cycle_iters: int
 
 

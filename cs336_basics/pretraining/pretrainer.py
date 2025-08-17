@@ -22,8 +22,12 @@ import statistics
 import wandb
 import datetime
 import dataclasses
+from numpy.lib.format import open_memmap
 
 logger = logging.getLogger(__name__)
+
+torch.set_float32_matmul_precision("high")
+torch.backends.cuda.matmul.allow_tf32 = True
 
 
 class Pretrainer:
@@ -121,6 +125,11 @@ class Pretrainer:
             min_learning_rate=annealing_configuration.min_learning_rate,
             warmup_iters=annealing_configuration.warmup_iters,
             cosine_cycle_iters=annealing_configuration.cosine_cycle_iters,
+            use_cosine_rampup=(
+                annealing_configuration.use_cosine_rampup
+                if annealing_configuration.use_cosine_rampup is not None
+                else False
+            ),
         )
         for pg in self._optimizer.param_groups:
             pg["lr"] = cosine_lr
@@ -154,8 +163,11 @@ class Pretrainer:
         with open(configuration.input_path, "rt") as f:
             f.seek(start)
             result = tokenizer.encode(f.read(end - start))
-            logger.info("Worker tokenized")
-            return result
+        output_path = f"{configuration.output_path}/tokens.start={start},end={end}.npy"
+        result_array = np.array(result)
+        np.save(output_path, result_array)
+        logger.info("Worker tokenized")
+        return (output_path, result_array.shape[0])
 
     def tokenize_input(self):
         tokenizer = self.get_tokenizer()
@@ -168,7 +180,7 @@ class Pretrainer:
             )
 
         with multiprocessing.Pool(processes=num_processes) as pool:
-            token_segments = pool.map(
+            token_segment_paths = pool.map(
                 functools.partial(
                     Pretrainer._encode,
                     tokenizer=tokenizer,
@@ -183,12 +195,23 @@ class Pretrainer:
             else np.int32
         )
         logger.info("Saving input tokens")
-        np.save(
-            self._configuration.tokenized_input_path,
-            np.array(
-                [token for tokens in token_segments for token in tokens], dtype=dtype
-            ),
+        tmp_path = self._configuration.tokenized_input_path + ".tmp"
+        mm = open_memmap(
+            tmp_path,
+            mode="w+",
+            dtype=dtype,
+            shape=(sum(size for _, size in token_segment_paths),),
         )
+        offset = 0
+        for token_path, size in token_segment_paths:
+            mm[offset : offset + size] = np.array(
+                np.load(token_path),
+                dtype=dtype,
+            )
+            offset += size
+            os.remove(token_path)
+        del mm
+        os.replace(tmp_path, self._configuration.tokenized_input_path)
 
     def get_tokenized_input(self):
         if not os.path.exists(self._configuration.tokenized_input_path):
@@ -201,6 +224,7 @@ class Pretrainer:
         return set([pg["lr"] for pg in self._optimizer.param_groups])
 
     def train(self):
+        self._model = torch.compile(self._model)
         wandb.init(
             # Set the project where this run will be logged
             project=self._configuration.training_loop.name,

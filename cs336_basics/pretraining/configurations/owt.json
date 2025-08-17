@@ -22,13 +22,14 @@
         "dtype": "bfloat16"
     },
     "annealing_configuration": {
-        "zero_iters": 0,
-        "max_learning_rate": 0.001,
-        "min_learning_rate": 0.0001,
-        "warmup_iters": 500,
-        "cosine_cycle_iters": 2000
+        "zero_iters": 3500,
+        "warmup_iters": 5000,
+        "use_cosine_rampup": true,
+        "max_learning_rate": 0.0005,
+        "min_learning_rate": 0.00001,
+        "cosine_cycle_iters": 44000
     },
-    "batch_size": 1024,
-    "context_length": 16,
+    "batch_size": 64,
+    "context_length": 256,
     "initial_max_l2_norm": 0.7
 }

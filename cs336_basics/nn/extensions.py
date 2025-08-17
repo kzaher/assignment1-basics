@@ -33,11 +33,18 @@ def cosine_learning_rate(
     min_learning_rate: float,
     warmup_iters: int,
     cosine_cycle_iters: int,
+    use_cosine_rampup=False,
 ) -> float:
     if it < zero_iters:
         return 0
     if it < warmup_iters:
-        return (it - zero_iters) / (warmup_iters - zero_iters) * max_learning_rate
+        return (
+            0.5
+            * (1 - math.cos((it - zero_iters) / (warmup_iters - zero_iters) * math.pi))
+            * max_learning_rate
+            if use_cosine_rampup
+            else (it - zero_iters) / (warmup_iters - zero_iters) * max_learning_rate
+        )
     if it > cosine_cycle_iters:
         return min_learning_rate
 
