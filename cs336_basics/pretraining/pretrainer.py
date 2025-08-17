@@ -23,6 +23,7 @@ import wandb
 import datetime
 import dataclasses
 from numpy.lib.format import open_memmap
+import gc
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class Pretrainer:
         self._configuration = configuration
         lm_configuration = configuration.training_loop.transformer_llm
         self._i = 0
-        self._model = transformer_lm.TransformerLm(
+        model = transformer_lm.TransformerLm(
             vocab_size=lm_configuration.vocab_size,
             context_length=lm_configuration.context_length,
             d_model=lm_configuration.d_model,
@@ -46,6 +47,8 @@ class Pretrainer:
             device=lm_configuration.device,
             dtype=getattr(torch, lm_configuration.dtype or "float32"),
         )
+        model.register_buffer("start_time", torch.tensor(time.time()))
+        self._model = torch.compile(model)
         optimizer_configuration = (
             configuration.training_loop.adamw_optimizer_configuration
         )
@@ -57,8 +60,6 @@ class Pretrainer:
             betas=(optimizer_configuration.betas[0], optimizer_configuration.betas[1]),
             eps=optimizer_configuration.eps,
         )
-
-        self._model.register_buffer("start_time", torch.tensor(time.time()))
 
     def _checkpoint_exists(self, i: int) -> str | None:
         return (
@@ -224,7 +225,6 @@ class Pretrainer:
         return set([pg["lr"] for pg in self._optimizer.param_groups])
 
     def train(self):
-        self._model = torch.compile(self._model)
         wandb.init(
             # Set the project where this run will be logged
             project=self._configuration.training_loop.name,
@@ -252,7 +252,7 @@ class Pretrainer:
             (input, target) = extensions.get_batch(
                 tokenized_input,
                 batch_size=self._configuration.training_loop.batch_size,
-                context_length=self._configuration.training_loop.context_length,
+                context_length=self._configuration.training_loop.transformer_llm.context_length,
                 device=self._configuration.training_loop.transformer_llm.device,
             )
             loss = cross_entropy_loss(
@@ -277,7 +277,7 @@ class Pretrainer:
             )
             wandb.log(
                 {
-                    "loss": loss,
+                    "loss": loss.item(),
                     "i": self._i,
                     "clipped_gradients": int(clipped_gradients),
                     "lr0": list(self.get_lrs())[0],
@@ -307,4 +307,6 @@ class Pretrainer:
                         "checkpoint_save_time": time.time() - start_save,
                     }
                 )
+                gc.collect()
+                torch.cuda.empty_cache()
             self._i += 1

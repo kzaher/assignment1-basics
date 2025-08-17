@@ -41,7 +41,6 @@ class LlmPretrainingTrainingLoopConfiguration:
     transformer_llm: TransformerLlmConfiguration
     annealing_configuration: AnnealingConfiguration
     batch_size: int
-    context_length: int
     initial_max_l2_norm: float
 
     @classmethod

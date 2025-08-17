@@ -116,9 +116,10 @@ def save_checkpoint(
     iteration: int,
     out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
 ):
+    model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
     torch.save(
         {
-            "model_state": model.state_dict(),
+            "model_state": model_to_save.state_dict(),
             "optimizer_state": optimizer.state_dict(),
             "iteration": iteration,
         },
@@ -129,8 +130,9 @@ def save_checkpoint(
 def load_checkpoint(
     src: str, model: nn.Module, optimizer: torch.optim.Optimizer
 ) -> int:
+    model_to_load = model._orig_mod if hasattr(model, "_orig_mod") else model
     state = torch.load(src)
-    model.load_state_dict(state["model_state"])
+    model_to_load.load_state_dict(state["model_state"])
     optimizer.load_state_dict(state["optimizer_state"])
     return state["iteration"]
 
