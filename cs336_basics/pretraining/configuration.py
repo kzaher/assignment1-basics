@@ -23,7 +23,7 @@ class AnnealingConfiguration:
 @dataclasses.dataclass(frozen=True)
 class TransformerLlmConfiguration:
     vocab_size: int
-    context_length: int
+    max_sequence_length: int
     d_model: int
     num_layers: int
     num_heads: int
@@ -36,11 +36,13 @@ class TransformerLlmConfiguration:
 @dataclasses.dataclass(frozen=True)
 class LlmPretrainingTrainingLoopConfiguration:
     name: str
+    input_path: str
     checkpoint_persist_modulus: int
     adamw_optimizer_configuration: AdamWOptimizerConfiguration
     transformer_llm: TransformerLlmConfiguration
     annealing_configuration: AnnealingConfiguration
     batch_size: int
+    context_length: int
     initial_max_l2_norm: float
 
     @classmethod
@@ -50,34 +52,38 @@ class LlmPretrainingTrainingLoopConfiguration:
 
 @dataclasses.dataclass(frozen=True)
 class PretrainingConfiguration:
-    input_path: str
     output_path: str
     training_loop: LlmPretrainingTrainingLoopConfiguration
     checkpoint: int | None
 
     @property
+    def experiment_output_path(self):
+        assert self.output_path
+        assert self.training_loop.name
+        return f"{self.output_path}/{self.training_loop.name}"
+
+    @property
     def vocabulary_path(self) -> str:
         assert self.training_loop.transformer_llm.vocab_size
-        return f"{self.output_path}/vocabulary.{self.training_loop.transformer_llm.vocab_size}"
+        return f"{self.experiment_output_path}/vocabulary.{self.training_loop.transformer_llm.vocab_size}"
 
     @property
     def checkpoint_dir(self):
-        return f"{self.tokenized_input_path}.checkpoints"
+        return f"{self.experiment_output_path}/checkpoints"
 
     @property
     def tokenized_input_path(self):
-        assert self.output_path
-        return f"{self.output_path}/input.tokens.npy"
+        vocab_size = self.training_loop.transformer_llm.vocab_size
+        assert vocab_size
+        return f"{self.training_loop.input_path}.tokens.vocab_size={vocab_size}.npy"
 
     @property
     def tokenizer_path(self) -> tuple[str, str]:
-        output_path = self.output_path
         vocab_size = self.training_loop.transformer_llm.vocab_size
-        assert output_path
         assert vocab_size
         return (
-            f"{output_path}/input.tokenizer.{vocab_size}",
-            f"{output_path}/input.tokenizer.{vocab_size}.merges",
+            f"{self.training_loop.input_path}.bpe-tokenizer.vocab_size={vocab_size}",
+            f"{self.training_loop.input_path}.bpe-tokenizer.vocab_size={vocab_size}.merges",
         )
 
     def checkpoint_path(self, i: int) -> str:

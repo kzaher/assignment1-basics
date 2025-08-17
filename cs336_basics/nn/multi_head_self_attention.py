@@ -15,7 +15,7 @@ class MultiHeadSelfAttention(nn.Module):
         num_heads: int,
         d_key: int,
         d_value: int,
-        max_seq_length: int | None = None,
+        max_sequence_length: int | None = None,
         theta: float | None = None,
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
@@ -25,11 +25,11 @@ class MultiHeadSelfAttention(nn.Module):
         self.num_heads = num_heads
         self.device = device
         assert d_model % num_heads == 0
-        if theta and max_seq_length:
+        if theta and max_sequence_length:
             self.rope = rope.Rope(
                 theta=theta,
                 d_k=d_model // num_heads,
-                max_seq_len=max_seq_length,
+                max_seq_len=max_sequence_length,
                 device=device,
                 dtype=dtype,
             )

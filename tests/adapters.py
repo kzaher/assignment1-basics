@@ -219,7 +219,7 @@ def run_multihead_self_attention_with_rope(
         num_heads=num_heads,
         d_key=q_proj_weight.size(-2),
         d_value=v_proj_weight.size(-2),
-        max_seq_length=max_seq_len,
+        max_sequence_length=max_seq_len,
         theta=theta,
     )
     mhsa.load_state_dict(
@@ -330,7 +330,7 @@ def run_transformer_block(
         d_model=d_model,
         num_heads=num_heads,
         d_ff=d_ff,
-        max_seq_len=max_seq_len,
+        max_sequence_length=max_seq_len,
         theta=theta,
     )
     transformer_block.load_state_dict(weights)
@@ -418,7 +418,7 @@ def run_transformer_lm(
     """
     transformer_lm = basic_transformer_lm.TransformerLm(
         vocab_size=vocab_size,
-        context_length=context_length,
+        max_sequence_length=context_length,
         d_model=d_model,
         num_layers=num_layers,
         num_heads=num_heads,

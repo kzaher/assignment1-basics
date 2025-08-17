@@ -3,6 +3,7 @@ from collections import abc
 import pickle
 from cs336_basics import bpe_constants
 import heapq
+from cs336_basics.bpe_cpp_optimizer import OptimizedBPEEncoder
 
 
 class BpeTokenizer:
@@ -34,6 +35,8 @@ class BpeTokenizer:
         self._has_special_tokens = set[str]()
         for special_token in self._special_tokens:
             self._has_special_tokens.add(special_token[0])
+
+        self._cpp_encoder = OptimizedBPEEncoder(self._vocab, self._token_merges)
 
     @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
@@ -80,6 +83,15 @@ class BpeTokenizer:
             return heapq.heappop(self.queue_)
 
     def encode_pretoken_(self, pretoken: bytes, queue: WorkQueue) -> list[int]:
+        # Use C++ optimizer if available
+        if self._cpp_encoder is not None:
+            return self._cpp_encoder.encode_pretoken(pretoken)
+
+        # Fall back to Python implementation
+        return self._encode_pretoken_python(pretoken, queue)
+
+    def _encode_pretoken_python(self, pretoken: bytes, queue: WorkQueue) -> list[int]:
+        """Original Python implementation as fallback"""
         tokens = [
             self._inverse_vocab[pretoken[i : i + 1]] for i in range(len(pretoken))
         ]

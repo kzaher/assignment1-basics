@@ -1,5 +1,6 @@
 {
-    "name": "Owt",
+    "name": "owt",
+    "input_path": "data/owt_train.txt",
     "checkpoint_persist_modulus": 500,
     "adamw_optimizer_configuration": {
         "lr": 0.001,
@@ -11,8 +12,8 @@
         "eps": 1e-8
     },
     "transformer_llm": {
-        "vocab_size": 10000,
-        "context_length": 256,
+        "vocab_size": 2000,
+        "max_sequence_length": 2048,
         "d_model": 768,
         "num_layers": 12,
         "num_heads": 12,
@@ -29,6 +30,7 @@
         "min_learning_rate": 0.00001,
         "cosine_cycle_iters": 10000
     },
+    "context_length": 256,
     "batch_size": 64,
     "initial_max_l2_norm": 0.7
 }

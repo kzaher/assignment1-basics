@@ -1,5 +1,5 @@
 """
-uv run python3 cs336_basics/pretrain_llm.py --configuration_path=cs336_basics/pretraining/configurations/tiny_stories.json --input_path=/mnt/fastdisk/data/TinyStoriesV2-GPT4-train.txt --output_path=/mnt/fastdisk/experiments/tiny_stories_1
+uv run python3 cs336_basics/pretrain_llm.py --configuration_path=cs336_basics/pretraining/configurations/tiny_stories.json
 """
 
 import sys
@@ -23,9 +23,12 @@ def main(argv: abc.Sequence[str]):
     parser.add_argument(
         "--configuration_path", type=str, required=True, help="Configuration path"
     )
-    parser.add_argument("--input_path", type=str, required=True, help="Input text path")
     parser.add_argument(
-        "--output_path", type=str, required=True, help="Output directory path"
+        "--output_path",
+        type=str,
+        required=False,
+        default="experiments",
+        help="Output directory path",
     )
     parser.add_argument(
         "--checkpoint", type=int, required=False, default=None, help="Checkpoint index"
@@ -35,7 +38,6 @@ def main(argv: abc.Sequence[str]):
     with open(args.configuration_path, "rt") as f:
         configuration_str = f.read()
     configuration_instance = configuration.PretrainingConfiguration(
-        input_path=args.input_path,
         output_path=args.output_path,
         checkpoint=args.checkpoint,
         training_loop=configuration.LlmPretrainingTrainingLoopConfiguration.from_dict(

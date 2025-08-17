@@ -38,7 +38,7 @@ class Pretrainer:
         self._i = 0
         model = transformer_lm.TransformerLm(
             vocab_size=lm_configuration.vocab_size,
-            context_length=lm_configuration.context_length,
+            max_sequence_length=lm_configuration.max_sequence_length,
             d_model=lm_configuration.d_model,
             num_layers=lm_configuration.num_layers,
             num_heads=lm_configuration.num_heads,
@@ -137,7 +137,7 @@ class Pretrainer:
 
     def train_tokenizer(self):
         vocabulary, merges = train_bpe(
-            input_path=self._configuration.input_path,
+            input_path=self._configuration.training_loop.input_path,
             vocab_size=self._configuration.training_loop.transformer_llm.vocab_size,
             special_tokens=[bpe_constants.END_OF_TEXT],
         )
@@ -156,15 +156,17 @@ class Pretrainer:
     def _encode(
         cls,
         file_range: tuple[int, int],
-        tokenizer: BpeTokenizer,
         configuration: configuration.PretrainingConfiguration,
     ):
+        tokenizer = BpeTokenizer.from_files(*configuration.tokenizer_path)
         start, end = file_range
         logger.info("Starting worker")
-        with open(configuration.input_path, "rt") as f:
+        with open(configuration.training_loop.input_path, "rt") as f:
             f.seek(start)
             result = tokenizer.encode(f.read(end - start))
-        output_path = f"{configuration.output_path}/tokens.start={start},end={end}.npy"
+        output_path = (
+            f"{configuration.tokenized_input_path}.tokens.start={start},end={end}.npy"
+        )
         result_array = np.array(result)
         np.save(output_path, result_array)
         logger.info("Worker tokenized")
@@ -173,7 +175,7 @@ class Pretrainer:
     def tokenize_input(self):
         tokenizer = self.get_tokenizer()
         num_processes = min(multiprocessing.cpu_count(), 12)
-        with open(self._configuration.input_path, "rb") as f:
+        with open(self._configuration.training_loop.input_path, "rb") as f:
             boundaries = pretokenization.find_chunk_boundaries(
                 f,
                 num_processes * 8,
@@ -184,7 +186,6 @@ class Pretrainer:
             token_segment_paths = pool.map(
                 functools.partial(
                     Pretrainer._encode,
-                    tokenizer=tokenizer,
                     configuration=self._configuration,
                 ),
                 [(start, end) for start, end in zip(boundaries[:-1], boundaries[1:])],
@@ -252,7 +253,7 @@ class Pretrainer:
             (input, target) = extensions.get_batch(
                 tokenized_input,
                 batch_size=self._configuration.training_loop.batch_size,
-                context_length=self._configuration.training_loop.transformer_llm.context_length,
+                context_length=self._configuration.training_loop.context_length,
                 device=self._configuration.training_loop.transformer_llm.device,
             )
             loss = cross_entropy_loss(

@@ -1,5 +1,5 @@
 {
-    "name": "Owt",
+    "name": "owt",
     "checkpoint_persist_modulus": 500,
     "adamw_optimizer_configuration": {
         "lr": 0.001,

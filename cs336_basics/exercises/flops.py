@@ -1,9 +1,9 @@
 # %%
+from __future__ import annotations
 from cs336_basics.nn import extensions
 from cs336_basics.nn import linear
 from cs336_basics.nn import transformer_lm
 from torch import nn
-from __future__ import annotations
 import dataclasses
 from collections import abc
 import pandas as pd
@@ -138,7 +138,7 @@ for k, params in gpt2s.items():
     print(f"Model: {k}")
     instance = transformer_lm.TransformerLm(**params)
     count_parameters = [np.prod(param.size()) for param in instance.parameters()]
-    print(f'# Params {count_parameters}')
+    print(f"# Params {count_parameters}")
     node = Node.build(instance)
 
     def find_flops_inject(node: Node):

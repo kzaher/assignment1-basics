@@ -13,7 +13,7 @@ class TransformerLm(nn.Module):
     def __init__(
         self,
         vocab_size: int,
-        context_length: int,
+        max_sequence_length: int,
         d_model: int,
         num_layers: int,
         num_heads: int,
@@ -32,7 +32,7 @@ class TransformerLm(nn.Module):
                     d_model=d_model,
                     num_heads=num_heads,
                     d_ff=d_ff,
-                    max_seq_len=context_length,
+                    max_sequence_length=max_sequence_length,
                     theta=rope_theta,
                     device=device,
                     dtype=dtype,
