@@ -137,7 +137,7 @@ class Pretrainer:
 
     def train_tokenizer(self):
         vocabulary, merges = train_bpe(
-            input_path=self._configuration.training_loop.input_path,
+            input_path=self._configuration.training_loop.training_data_path,
             vocab_size=self._configuration.training_loop.transformer_llm.vocab_size,
             special_tokens=[bpe_constants.END_OF_TEXT],
         )
@@ -157,25 +157,23 @@ class Pretrainer:
         cls,
         file_range: tuple[int, int],
         configuration: configuration.PretrainingConfiguration,
+        data_path: str,
     ):
         tokenizer = BpeTokenizer.from_files(*configuration.tokenizer_path)
         start, end = file_range
         logger.info("Starting worker")
-        with open(configuration.training_loop.input_path, "rt") as f:
+        with open(data_path, "rt") as f:
             f.seek(start)
             result = tokenizer.encode(f.read(end - start))
-        output_path = (
-            f"{configuration.tokenized_input_path}.tokens.start={start},end={end}.npy"
-        )
+        output_path = f"{data_path}.tokens.start={start},end={end}.npy"
         result_array = np.array(result)
         np.save(output_path, result_array)
         logger.info("Worker tokenized")
         return (output_path, result_array.shape[0])
 
-    def tokenize_input(self):
-        tokenizer = self.get_tokenizer()
+    def tokenize_data(self, data_path: str):
         num_processes = min(multiprocessing.cpu_count(), 12)
-        with open(self._configuration.training_loop.input_path, "rb") as f:
+        with open(data_path, "rb") as f:
             boundaries = pretokenization.find_chunk_boundaries(
                 f,
                 num_processes * 8,
@@ -187,6 +185,7 @@ class Pretrainer:
                 functools.partial(
                     Pretrainer._encode,
                     configuration=self._configuration,
+                    data_path=data_path,
                 ),
                 [(start, end) for start, end in zip(boundaries[:-1], boundaries[1:])],
             )
@@ -197,7 +196,7 @@ class Pretrainer:
             else np.int32
         )
         logger.info("Saving input tokens")
-        tmp_path = self._configuration.tokenized_input_path + ".tmp"
+        tmp_path = self._configuration.cached_tokens(data_path) + ".tmp"
         mm = open_memmap(
             tmp_path,
             mode="w+",
@@ -213,14 +212,27 @@ class Pretrainer:
             offset += size
             os.remove(token_path)
         del mm
-        os.replace(tmp_path, self._configuration.tokenized_input_path)
+        os.replace(tmp_path, self._configuration.cached_tokens(data_path))
 
-    def get_tokenized_input(self):
-        if not os.path.exists(self._configuration.tokenized_input_path):
-            logger.info("Creating tokenized input")
-            self.tokenize_input()
+    def get_tokenized_training_data(self):
+        if not os.path.exists(self._configuration.tokenized_training_data_path):
+            logger.info("Creating tokenized training data")
+            self.tokenize_data(
+                data_path=self._configuration.training_loop.training_data_path
+            )
 
-        return np.load(self._configuration.tokenized_input_path, mmap_mode="r")
+        return np.load(self._configuration.tokenized_training_data_path, mmap_mode="r")
+
+    def get_tokenized_validation_data(self):
+        if not os.path.exists(self._configuration.tokenized_validation_data_path):
+            logger.info("Creating tokenized validation data")
+            self.tokenize_data(
+                data_path=self._configuration.training_loop.validation_data_path
+            )
+
+        return np.load(
+            self._configuration.tokenized_validation_data_path, mmap_mode="r"
+        )
 
     def get_lrs(self):
         return set([pg["lr"] for pg in self._optimizer.param_groups])
@@ -236,9 +248,10 @@ class Pretrainer:
         os.makedirs(self._configuration.output_path, exist_ok=True)
         os.makedirs(self._configuration.checkpoint_dir, exist_ok=True)
 
-        tokenized_input = self.get_tokenized_input()
+        tokenized_training_data = self.get_tokenized_training_data()
+        tokenized_validation_data = self.get_tokenized_validation_data()
         assert (
-            np.max(tokenized_input)
+            np.max(tokenized_training_data)
             < self._configuration.training_loop.transformer_llm.vocab_size
         )
         logger.info("Checked tokens are valid")
@@ -250,14 +263,14 @@ class Pretrainer:
             start = time.time()
             self._optimizer.zero_grad()
             self._set_annealed_learning_rate()
-            (input, target) = extensions.get_batch(
-                tokenized_input,
+            (training_batch, target) = extensions.get_batch(
+                tokenized_training_data,
                 batch_size=self._configuration.training_loop.batch_size,
                 context_length=self._configuration.training_loop.context_length,
                 device=self._configuration.training_loop.transformer_llm.device,
             )
             loss = cross_entropy_loss(
-                self._model(input.to(torch.int64)),
+                self._model(training_batch.to(torch.int64)),
                 target=target.to(torch.int64).to(
                     device=self._configuration.training_loop.transformer_llm.device,
                 ),
@@ -303,9 +316,22 @@ class Pretrainer:
             ):
                 start_save = time.time()
                 self._persist_checkpoint()
+                (validation_batch, validation_target) = extensions.get_batch(
+                    tokenized_validation_data,
+                    batch_size=self._configuration.training_loop.batch_size,
+                    context_length=self._configuration.training_loop.context_length,
+                    device=self._configuration.training_loop.transformer_llm.device,
+                )
+                validation_loss = cross_entropy_loss(
+                    self._model(validation_batch.to(torch.int64)),
+                    target=validation_target.to(torch.int64).to(
+                        device=self._configuration.training_loop.transformer_llm.device,
+                    ),
+                )
                 wandb.log(
                     {
                         "checkpoint_save_time": time.time() - start_save,
+                        "validation_loss": validation_loss.item(),
                     }
                 )
                 gc.collect()

@@ -36,7 +36,8 @@ class TransformerLlmConfiguration:
 @dataclasses.dataclass(frozen=True)
 class LlmPretrainingTrainingLoopConfiguration:
     name: str
-    input_path: str
+    training_data_path: str
+    validation_data_path: str
     checkpoint_persist_modulus: int
     adamw_optimizer_configuration: AdamWOptimizerConfiguration
     transformer_llm: TransformerLlmConfiguration
@@ -71,19 +72,26 @@ class PretrainingConfiguration:
     def checkpoint_dir(self):
         return f"{self.experiment_output_path}/checkpoints"
 
-    @property
-    def tokenized_input_path(self):
+    def cached_tokens(self, original_path: str) -> str:
         vocab_size = self.training_loop.transformer_llm.vocab_size
         assert vocab_size
-        return f"{self.training_loop.input_path}.tokens.vocab_size={vocab_size}.npy"
+        return f"{original_path}.tokens.vocab_size={vocab_size}.npy"
+
+    @property
+    def tokenized_training_data_path(self):
+        return self.cached_tokens(self.training_loop.training_data_path)
+
+    @property
+    def tokenized_validation_data_path(self):
+        return self.cached_tokens(self.training_loop.validation_data_path)
 
     @property
     def tokenizer_path(self) -> tuple[str, str]:
         vocab_size = self.training_loop.transformer_llm.vocab_size
         assert vocab_size
         return (
-            f"{self.training_loop.input_path}.bpe-tokenizer.vocab_size={vocab_size}",
-            f"{self.training_loop.input_path}.bpe-tokenizer.vocab_size={vocab_size}.merges",
+            f"{self.training_loop.training_data_path}.bpe-tokenizer.vocab_size={vocab_size}",
+            f"{self.training_loop.training_data_path}.bpe-tokenizer.vocab_size={vocab_size}.merges",
         )
 
     def checkpoint_path(self, i: int) -> str:

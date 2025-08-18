@@ -3,7 +3,8 @@ from collections import abc
 import pickle
 from cs336_basics import bpe_constants
 import heapq
-from cs336_basics.bpe_cpp_optimizer import OptimizedBPEEncoder
+from cs336_basics.bpe_tokenizer_cpp import OptimizedBPEEncoder
+import functools
 
 
 class BpeTokenizer:
@@ -83,14 +84,6 @@ class BpeTokenizer:
             return heapq.heappop(self.queue_)
 
     def encode_pretoken_(self, pretoken: bytes, queue: WorkQueue) -> list[int]:
-        # Use C++ optimizer if available
-        if self._cpp_encoder is not None:
-            return self._cpp_encoder.encode_pretoken(pretoken)
-
-        # Fall back to Python implementation
-        return self._encode_pretoken_python(pretoken, queue)
-
-    def _encode_pretoken_python(self, pretoken: bytes, queue: WorkQueue) -> list[int]:
         """Original Python implementation as fallback"""
         tokens = [
             self._inverse_vocab[pretoken[i : i + 1]] for i in range(len(pretoken))
@@ -128,12 +121,14 @@ class BpeTokenizer:
         pretokens = [
             pretoken.encode("utf-8") for pretoken in re.findall(bpe_constants.PAT, text)
         ]
-        tokens = [
-            token
-            for pretoken in pretokens
-            for token in self.encode_pretoken_(pretoken, queue)
-        ]
-        return tokens
+        if self._cpp_encoder is not None:
+            return self._cpp_encoder.encode_pretokens(pretokens)
+        else:
+            return [
+                token
+                for pretoken in pretokens
+                for token in self.encode_pretoken_(pretoken, queue)
+            ]
 
     def encode(self, text: str) -> list[int]:
         tokens: list[int] = []

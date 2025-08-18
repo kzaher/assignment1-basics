@@ -8,12 +8,9 @@ import argparse
 from cs336_basics.pretraining import pretrainer, configuration
 import json
 import logging
+import extensions
 
-logging.basicConfig(
-    level=logging.INFO,  # or DEBUG
-    format="%(levelname)s %(name)s: %(message)s",
-    stream=sys.stdout,  # default is sys.stderr; pick stdout if you prefer
-)
+extensions.setup_default_logging()
 
 
 def main(argv: abc.Sequence[str]):

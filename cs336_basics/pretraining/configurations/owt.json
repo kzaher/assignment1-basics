@@ -1,6 +1,7 @@
 {
     "name": "owt",
-    "input_path": "data/owt_train.txt",
+    "training_data_path": "data/owt_train.txt",
+    "validation_data_path": "data/owt_valid.txt",
     "checkpoint_persist_modulus": 500,
     "adamw_optimizer_configuration": {
         "lr": 0.001,

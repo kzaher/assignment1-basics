@@ -210,6 +210,15 @@ public:
         
         return result;
     }
+
+    std::vector<int> encode_pretokens(const std::vector<std::string>& pretokens) {
+        std::vector<int> return_tokens;
+        for (auto& pretoken : pretokens) {
+            auto tokens = encode_pretoken(pretoken);
+            return_tokens.insert(return_tokens.end(), tokens.begin(), tokens.end());
+        }
+        return return_tokens;
+    }
     
     std::string decode_tokens(const std::vector<int>& tokens) const {
         std::string result;
@@ -260,6 +269,15 @@ class OptimizedBPEEncoder:
 
     def encode_pretoken(self, pretoken: bytes) -> List[int]:
         result = self._cpp_encoder.encode_pretoken(pretoken)
+
+        # if __debug__:
+        #     decoded_bytes = bytes(self._cpp_encoder.decode_tokens(result))
+        #     assert decoded_bytes == pretoken, f"{decoded_bytes} != {pretoken}"
+
+        return result
+
+    def encode_pretokens(self, pretokens: list[bytes]) -> List[int]:
+        result = self._cpp_encoder.encode_pretokens(pretokens)
 
         # if __debug__:
         #     decoded_bytes = bytes(self._cpp_encoder.decode_tokens(result))
