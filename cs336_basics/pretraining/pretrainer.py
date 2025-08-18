@@ -254,6 +254,10 @@ class Pretrainer:
             np.max(tokenized_training_data)
             < self._configuration.training_loop.transformer_llm.vocab_size
         )
+        assert (
+            np.max(tokenized_validation_data)
+            < self._configuration.training_loop.transformer_llm.vocab_size
+        )
         logger.info("Checked tokens are valid")
 
         cross_entropy_loss = cross_entropy.CrossEntropyLoss()
