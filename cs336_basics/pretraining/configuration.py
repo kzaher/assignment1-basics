@@ -45,9 +45,36 @@ class LlmPretrainingTrainingLoopConfiguration:
     batch_size: int
     context_length: int
     initial_max_l2_norm: float
+    max_iterations: int | None = None
+    time_limit_in_seconds: int | None = None
 
     @classmethod
     def from_dict(cls, object: dict) -> "LlmPretrainingTrainingLoopConfiguration":
+        return serialization.from_dict(cls, object)
+
+
+@dataclasses.dataclass(frozen=True)
+class ParameterOverride:
+    path: str
+    float_values: list[float] | None
+    int_values: list[int] | None
+
+    @property
+    def values(self):
+        if self.float_values is not None:
+            return self.float_values
+        elif self.int_values is not None:
+            return self.int_values
+        else:
+            raise Exception("Values need to be specified")
+
+
+@dataclasses.dataclass(frozen=True)
+class ParameterSweepConfiguration:
+    values: list[ParameterOverride]
+
+    @classmethod
+    def from_dict(cls, object: dict) -> "ParameterSweepConfiguration":
         return serialization.from_dict(cls, object)
 
 
@@ -56,12 +83,14 @@ class PretrainingConfiguration:
     output_path: str
     training_loop: LlmPretrainingTrainingLoopConfiguration
     checkpoint: int | None
+    suffix: str | None = None
 
     @property
     def experiment_output_path(self):
         assert self.output_path
         assert self.training_loop.name
-        return f"{self.output_path}/{self.training_loop.name}"
+        suffix = self.suffix or ""
+        return f"{self.output_path + suffix}/{self.training_loop.name}"
 
     @property
     def vocabulary_path(self) -> str:

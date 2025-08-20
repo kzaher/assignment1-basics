@@ -1,5 +1,5 @@
 {
-    "name": "owt",
+    "name": "owt_sweep",
     "training_data_path": "data/owt_train.txt",
     "validation_data_path": "data/owt_valid.txt",
     "checkpoint_persist_modulus": 500,
@@ -24,14 +24,16 @@
         "dtype": "bfloat16"
     },
     "annealing_configuration": {
-        "zero_iters": 500,
-        "warmup_iters": 1000,
-        "use_cosine_rampup": true,
+        "zero_iters": 0,
+        "warmup_iters": 500,
+        "use_cosine_rampup": false,
         "max_learning_rate": 0.0005,
         "min_learning_rate": 0.00001,
         "cosine_cycle_iters": 10000
     },
     "context_length": 256,
     "batch_size": 64,
-    "initial_max_l2_norm": 0.7
+    "initial_max_l2_norm": 0.7,
+    "max_iterations": 6000,
+    "time_limit_in_seconds": 3600
 }

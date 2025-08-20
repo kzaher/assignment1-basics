@@ -10,8 +10,6 @@ import bisect
 import numpy as np
 import torch
 import time
-from torch import Tensor
-from jaxtyping import Int
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.bpe_tokenizer import BpeTokenizer
 from cs336_basics import bpe_constants
@@ -145,7 +143,7 @@ class Pretrainer:
         tokenizer = BpeTokenizer(vocab=vocabulary, merges=merges)
         tokenizer.persist(*self._configuration.tokenizer_path)
 
-    def get_tokenizer(self) -> BpeTokenizer:
+    def ensure_tokenizer(self) -> BpeTokenizer:
         if not os.path.exists(self._configuration.tokenizer_path[0]):
             logger.info("Training bpe tokenizer")
             self.train_tokenizer()
@@ -172,6 +170,8 @@ class Pretrainer:
         return (output_path, result_array.shape[0])
 
     def tokenize_data(self, data_path: str):
+        self.ensure_tokenizer()
+
         num_processes = min(multiprocessing.cpu_count(), 12)
         with open(data_path, "rb") as f:
             boundaries = pretokenization.find_chunk_boundaries(
@@ -263,6 +263,7 @@ class Pretrainer:
         cross_entropy_loss = cross_entropy.CrossEntropyLoss()
         total_gradient_value = 1e6
         distribution_of_gradient_values = []
+        training_start_time = time.time()
         while True:
             start = time.time()
             self._optimizer.zero_grad()
@@ -295,7 +296,7 @@ class Pretrainer:
             )
             wandb.log(
                 {
-                    "loss": loss.item(),
+                    "training_loss": loss.item(),
                     "i": self._i,
                     "clipped_gradients": int(clipped_gradients),
                     "lr0": list(self.get_lrs())[0],
@@ -312,12 +313,20 @@ class Pretrainer:
                     "step_time": time.time() - start,
                 }
             )
+            should_stop = (
+                self._configuration.training_loop.max_iterations
+                and self._i + 1 > self._configuration.training_loop.max_iterations
+            ) or (
+                self._configuration.training_loop.time_limit_in_seconds
+                and (time.time() - training_start_time)
+                > self._configuration.training_loop.time_limit_in_seconds
+            )
             if (
                 self._i
                 and self._i
                 % self._configuration.training_loop.checkpoint_persist_modulus
                 == 0
-            ):
+            ) or should_stop:
                 start_save = time.time()
                 self._persist_checkpoint()
                 (validation_batch, validation_target) = extensions.get_batch(
@@ -326,12 +335,13 @@ class Pretrainer:
                     context_length=self._configuration.training_loop.context_length,
                     device=self._configuration.training_loop.transformer_llm.device,
                 )
-                validation_loss = cross_entropy_loss(
-                    self._model(validation_batch.to(torch.int64)),
-                    target=validation_target.to(torch.int64).to(
-                        device=self._configuration.training_loop.transformer_llm.device,
-                    ),
-                )
+                with torch.no_grad():
+                    validation_loss = cross_entropy_loss(
+                        self._model(validation_batch.to(torch.int64)),
+                        target=validation_target.to(torch.int64).to(
+                            device=self._configuration.training_loop.transformer_llm.device,
+                        ),
+                    )
                 wandb.log(
                     {
                         "checkpoint_save_time": time.time() - start_save,
@@ -341,3 +351,8 @@ class Pretrainer:
                 gc.collect()
                 torch.cuda.empty_cache()
             self._i += 1
+            if should_stop:
+                logging.info(
+                    f"Training ended: max_iterations={self._configuration.training_loop.max_iterations}, time_limit={self._configuration.training_loop.time_limit_in_seconds}"
+                )
+                break
