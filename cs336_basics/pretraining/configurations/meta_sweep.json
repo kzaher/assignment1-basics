@@ -3,6 +3,7 @@
         {
             "path": "training_loop.transformer_llm.vocab_size",
             "int_values": [
+                32000,
                 257,
                 500,
                 1000,

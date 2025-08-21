@@ -90,7 +90,10 @@ class PretrainingConfiguration:
         assert self.output_path
         assert self.training_loop.name
         suffix = self.suffix or ""
-        return f"{self.output_path + suffix}/{self.training_loop.name}"
+        if suffix:
+            return f"{self.output_path}/{self.training_loop.name}/{suffix}"
+        else:
+            return f"{self.output_path}/{self.training_loop.name}"
 
     @property
     def vocabulary_path(self) -> str:

@@ -157,62 +157,85 @@ class Pretrainer:
         configuration: configuration.PretrainingConfiguration,
         data_path: str,
     ):
-        tokenizer = BpeTokenizer.from_files(*configuration.tokenizer_path)
-        start, end = file_range
-        logger.info("Starting worker")
-        with open(data_path, "rt") as f:
-            f.seek(start)
-            result = tokenizer.encode(f.read(end - start))
-        output_path = f"{data_path}.tokens.start={start},end={end}.npy"
-        result_array = np.array(result)
-        np.save(output_path, result_array)
-        logger.info("Worker tokenized")
-        return (output_path, result_array.shape[0])
+        try:
+            tokenizer = BpeTokenizer.from_files(*configuration.tokenizer_path)
+            start, end = file_range
+            logger.info("[Worker PID %d] Starting worker start=%d, end=%d", os.getpid(), start, end)
+            with open(data_path, "rt") as f:
+                f.seek(start)
+                result = tokenizer.encode(f.read(end - start))
+            output_path = f"{data_path}.tokens.start={start},end={end}.npy"
+            result_array = np.array(result)
+            np.save(output_path, result_array)
+            logger.info("[Worker PID %d] Finished tokenizing start=%d, end=%d, tokens=%d", os.getpid(), start, end, result_array.shape[0])
+            return (output_path, result_array.shape[0])
+        except Exception as e:
+            logger.exception("[Worker PID %d] Exception in worker for start=%d, end=%d: %s", os.getpid(), file_range[0], file_range[1], e)
+            return (None, 0)
 
     def tokenize_data(self, data_path: str):
         self.ensure_tokenizer()
 
-        num_processes = min(multiprocessing.cpu_count(), 12)
-        with open(data_path, "rb") as f:
-            boundaries = pretokenization.find_chunk_boundaries(
-                f,
-                num_processes * 8,
-                bpe_constants.END_OF_TEXT.encode("utf-8"),
-            )
+        while True:
+            try:
+                num_processes = min(multiprocessing.cpu_count(), 12)
+                logger.info("[Main PID %d] Using %d processes for tokenization", os.getpid(), num_processes)
+                with open(data_path, "rb") as f:
+                    boundaries = pretokenization.find_chunk_boundaries(
+                        f,
+                        num_processes * 8,
+                        bpe_constants.END_OF_TEXT.encode("utf-8"),
+                    )
 
-        with multiprocessing.Pool(processes=num_processes) as pool:
-            token_segment_paths = pool.map(
-                functools.partial(
-                    Pretrainer._encode,
-                    configuration=self._configuration,
-                    data_path=data_path,
-                ),
-                [(start, end) for start, end in zip(boundaries[:-1], boundaries[1:])],
-            )
+                logger.info("[Main PID %d] Boundaries: %s", os.getpid(), boundaries)
+                with multiprocessing.Pool(processes=num_processes) as pool:
+                    token_segment_paths_async_result = pool.map_async(
+                        functools.partial(
+                            Pretrainer._encode,
+                            configuration=self._configuration,
+                            data_path=data_path,
+                        ),
+                        [(start, end) for start, end in zip(boundaries[:-1], boundaries[1:])],
+                    )
+                    try:
+                        token_segment_paths = token_segment_paths_async_result.get(timeout=20 * 60)
+                        logger.info("[Main PID %d] Segmentation complete.", os.getpid())
+                    except multiprocessing.TimeoutError:
+                        logger.error("[Main PID %d] Timeout waiting for worker processes to finish.", os.getpid())
+                        pool.terminate()
+                        pool.join()
+                        raise
 
-        dtype = (
-            np.int16
-            if self._configuration.training_loop.transformer_llm.vocab_size < (1 << 15)
-            else np.int32
-        )
-        logger.info("Saving input tokens")
-        tmp_path = self._configuration.cached_tokens(data_path) + ".tmp"
-        mm = open_memmap(
-            tmp_path,
-            mode="w+",
-            dtype=dtype,
-            shape=(sum(size for _, size in token_segment_paths),),
-        )
-        offset = 0
-        for token_path, size in token_segment_paths:
-            mm[offset : offset + size] = np.array(
-                np.load(token_path),
-                dtype=dtype,
-            )
-            offset += size
-            os.remove(token_path)
-        del mm
-        os.replace(tmp_path, self._configuration.cached_tokens(data_path))
+                # Filter out failed chunks
+                if [x for x in token_segment_paths if x[0] is None]:
+                    raise Exception('There are some failed segments.')
+
+                dtype = (
+                    np.int16
+                    if self._configuration.training_loop.transformer_llm.vocab_size < (1 << 15)
+                    else np.int32
+                )
+                logger.info("Saving input tokens")
+                tmp_path = self._configuration.cached_tokens(data_path) + ".tmp"
+                mm = open_memmap(
+                    tmp_path,
+                    mode="w+",
+                    dtype=dtype,
+                    shape=(sum(size for _, size in token_segment_paths),),
+                )
+                offset = 0
+                for token_path, size in token_segment_paths:
+                    mm[offset : offset + size] = np.array(
+                        np.load(token_path),
+                        dtype=dtype,
+                    )
+                    offset += size
+                    os.remove(token_path)
+                del mm
+                os.replace(tmp_path, self._configuration.cached_tokens(data_path))
+                break
+            except Exception as e:
+                logger.exception(f'[Main PID {os.getpid()}] Exception while tokenizing: {e}')
 
     def get_tokenized_training_data(self):
         if not os.path.exists(self._configuration.tokenized_training_data_path):
@@ -237,33 +260,19 @@ class Pretrainer:
     def get_lrs(self):
         return set([pg["lr"] for pg in self._optimizer.param_groups])
 
-    def train(self):
-        wandb.init(
-            # Set the project where this run will be logged
-            project=self._configuration.training_loop.name,
-            # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
-            name=f"experiment_{self._model.start_time.item()} ({datetime.datetime.fromtimestamp(self._model.start_time.item(), datetime.timezone.utc)})",
-            config=dataclasses.asdict(self._configuration),
-        )
-        os.makedirs(self._configuration.output_path, exist_ok=True)
-        os.makedirs(self._configuration.checkpoint_dir, exist_ok=True)
+    def should_stop(self):
+        return (self._configuration.training_loop.max_iterations
+                and self._i + 1 > self._configuration.training_loop.max_iterations
+            ) or (
+                self._configuration.training_loop.time_limit_in_seconds
+                and (time.time() - self._model.start_time.item())
+                > self._configuration.training_loop.time_limit_in_seconds
+            )
 
-        tokenized_training_data = self.get_tokenized_training_data()
-        tokenized_validation_data = self.get_tokenized_validation_data()
-        assert (
-            np.max(tokenized_training_data)
-            < self._configuration.training_loop.transformer_llm.vocab_size
-        )
-        assert (
-            np.max(tokenized_validation_data)
-            < self._configuration.training_loop.transformer_llm.vocab_size
-        )
-        logger.info("Checked tokens are valid")
-
+    def _run_training_loop(self, tokenized_training_data, tokenized_validation_data):
         cross_entropy_loss = cross_entropy.CrossEntropyLoss()
         total_gradient_value = 1e6
         distribution_of_gradient_values = []
-        training_start_time = time.time()
         while True:
             start = time.time()
             self._optimizer.zero_grad()
@@ -313,14 +322,7 @@ class Pretrainer:
                     "step_time": time.time() - start,
                 }
             )
-            should_stop = (
-                self._configuration.training_loop.max_iterations
-                and self._i + 1 > self._configuration.training_loop.max_iterations
-            ) or (
-                self._configuration.training_loop.time_limit_in_seconds
-                and (time.time() - training_start_time)
-                > self._configuration.training_loop.time_limit_in_seconds
-            )
+            should_stop =  self.should_stop()
             if (
                 self._i
                 and self._i
@@ -356,3 +358,34 @@ class Pretrainer:
                     f"Training ended: max_iterations={self._configuration.training_loop.max_iterations}, time_limit={self._configuration.training_loop.time_limit_in_seconds}"
                 )
                 break
+
+
+    def train(self):
+        if self.should_stop():
+            logger.info('Stop conditions are met.')
+            return
+
+        os.makedirs(self._configuration.output_path, exist_ok=True)
+        os.makedirs(self._configuration.checkpoint_dir, exist_ok=True)
+
+        tokenized_training_data = self.get_tokenized_training_data()
+        tokenized_validation_data = self.get_tokenized_validation_data()
+        assert (
+            np.max(tokenized_training_data)
+            < self._configuration.training_loop.transformer_llm.vocab_size
+        )
+        assert (
+            np.max(tokenized_validation_data)
+            < self._configuration.training_loop.transformer_llm.vocab_size
+        )
+        logger.info("Checked tokens are valid")
+
+        with wandb.init(
+            # Set the project where this run will be logged
+            project=self._configuration.training_loop.name,
+            # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
+            name="[Experiment] %s timestamp=%f" % (self._configuration.suffix or 'experiment', self._model.start_time.item()),
+            config=dataclasses.asdict(self._configuration),
+        ):
+            self._run_training_loop(tokenized_training_data=tokenized_training_data, tokenized_validation_data=tokenized_validation_data)
+

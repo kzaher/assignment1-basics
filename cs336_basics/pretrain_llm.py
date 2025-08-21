@@ -61,24 +61,26 @@ def main(argv: abc.Sequence[str]):
         json.dumps(dataclasses.asdict(configuration_instance), indent=4),
     )
     if meta_parameters_path := args.meta_parameters_path:
-
         with open(meta_parameters_path, "rt") as f:
             parameter_sweep_configuration = (
                 configuration.ParameterSweepConfiguration.from_dict(json.load(f))
             )
-        all_configurations = [
-            lambda c, replacement_value=replacement_value: (
-                dataclasses.replace(
-                    extensions.replace_recursively(
-                        c,
-                        lambda x: eval("x." + override_value.path, locals={"x": x}),
-                        replacement_value,
-                    ),
-                    suffix=f"{override_value.path}={replacement_value}",
-                )
+        def update_configuration(c: configuration.PretrainingConfiguration, parameter_override: configuration.ParameterOverride, override_value: object):
+            c = extensions.replace_recursively(c, lambda x: x.training_loop.name, f'{c.training_loop.name}.{parameter_override.path}')
+            c = dataclasses.replace(c, suffix=f"{parameter_override.path}={override_value}")
+            c = extensions.replace_recursively(
+                c,
+                lambda x: eval("x." + parameter_override.path, locals={"x": x}),
+                override_value,
             )
-            for override_value in parameter_sweep_configuration.values
-            for replacement_value in override_value.values
+            return c
+
+        all_configurations = [
+            lambda c, parameter_override=parameter_override, override_value=override_value: (
+                update_configuration(c, parameter_override=parameter_override, override_value=override_value)
+            )
+            for parameter_override in parameter_sweep_configuration.values
+            for override_value in parameter_override.values
         ]
         for configuration_value_mutation in all_configurations:
             mutated_configuration = configuration_value_mutation(configuration_instance)
