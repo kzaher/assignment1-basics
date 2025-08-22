@@ -21,11 +21,18 @@ class BpeTokenizer:
             special_token.encode("utf-8") for special_token in self._special_tokens
         ]
         self._inverse_vocab = {v: k for k, v in self._vocab.items()}
+        self._special_token_index = {}
         for special_token_bytes in self._special_tokens_bytes:
             if special_token_bytes in self._inverse_vocab:
                 continue
             self._inverse_vocab[special_token_bytes] = len(self._vocab)
             self._vocab[len(self._vocab)] = special_token_bytes
+
+        for special_token in self._special_tokens:
+            self._special_token_index[special_token] = self._inverse_vocab[
+                special_token.encode("utf-8")
+            ]
+
         self._token_merges = {
             (
                 self._inverse_vocab[merge[0]],
@@ -39,8 +46,13 @@ class BpeTokenizer:
 
         self._cpp_encoder = OptimizedBPEEncoder(self._vocab, self._token_merges)
 
+    def special_token(self, token: str) -> int:
+        return self._special_token_index[token]
+
     @classmethod
-    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
+    def from_files(
+        cls, vocab_filepath, merges_filepath, special_tokens=[bpe_constants.END_OF_TEXT]
+    ):
         with open(vocab_filepath, "rb") as f:
             vocab = pickle.loads(f.read())
         with open(merges_filepath, "rb") as f:

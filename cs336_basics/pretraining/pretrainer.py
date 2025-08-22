@@ -13,7 +13,7 @@ import time
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.bpe_tokenizer import BpeTokenizer
 from cs336_basics import bpe_constants
-import logging, sys
+import logging
 import multiprocessing
 import functools
 import statistics
@@ -22,6 +22,7 @@ import datetime
 import dataclasses
 from numpy.lib.format import open_memmap
 import gc
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,8 @@ class Pretrainer:
                     )
 
                 logger.info("[Main PID %d] Boundaries: %s", os.getpid(), boundaries)
-                with multiprocessing.Pool(processes=num_processes) as pool:
+                ctx = multiprocessing.get_context("spawn")
+                with ctx.Pool(processes=num_processes) as pool:
                     token_segment_paths_async_result = pool.map_async(
                         functools.partial(
                             Pretrainer._encode,
@@ -368,6 +370,9 @@ class Pretrainer:
         os.makedirs(self._configuration.output_path, exist_ok=True)
         os.makedirs(self._configuration.checkpoint_dir, exist_ok=True)
 
+        with open(self._configuration.output_metadata_path, 'wt') as f:
+            json.dump(dataclasses.asdict(self._configuration), f)
+
         tokenized_training_data = self.get_tokenized_training_data()
         tokenized_validation_data = self.get_tokenized_validation_data()
         assert (
@@ -384,7 +389,7 @@ class Pretrainer:
             # Set the project where this run will be logged
             project=self._configuration.training_loop.name,
             # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
-            name="[Experiment] %s timestamp=%f" % (self._configuration.suffix or 'experiment', self._model.start_time.item()),
+            name=f"{self._configuration.suffix or 'experiment'} {datetime.datetime.fromtimestamp(self._model.start_time.item(), datetime.timezone.utc)} timestamp={self._model.start_time.item()}",
             config=dataclasses.asdict(self._configuration),
         ):
             self._run_training_loop(tokenized_training_data=tokenized_training_data, tokenized_validation_data=tokenized_validation_data)

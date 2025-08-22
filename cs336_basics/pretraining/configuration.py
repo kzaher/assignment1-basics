@@ -131,3 +131,15 @@ class PretrainingConfiguration:
 
     def checkpoint_written_path(self, i: int) -> str:
         return f"{self.checkpoint_path(i)}.done"
+
+    @classmethod
+    def get_output_metadata_path(cls, experiment_output_path: str):
+        return f'{experiment_output_path}/configuration.json'
+    
+    @property
+    def output_metadata_path(self) -> str:
+        return PretrainingConfiguration.get_output_metadata_path(self.experiment_output_path)
+
+    @classmethod
+    def from_dict(cls, object: dict) -> "PretrainingConfiguration":
+        return serialization.from_dict(cls, object)

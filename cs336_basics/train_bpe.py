@@ -240,7 +240,9 @@ def get_pretoken_counts(input_path, num_processes):
             f, num_tasks, END_OF_TEXT.encode("utf-8")
         )
 
-    with multiprocessing.Pool(processes=num_processes) as pool:
+    ctx = multiprocessing.get_context('spawn')
+
+    with ctx.Pool(processes=num_processes) as pool:
         pretoken_counters_list = pool.map(
             get_pretokens_kw_args,
             [
