@@ -1,5 +1,5 @@
 {
-    "name": "owt_sweep4",
+    "name": "owt_sweep",
     "training_data_path": "data/owt_train.txt",
     "validation_data_path": "data/owt_valid.txt",
     "checkpoint_persist_modulus": 500,
@@ -13,7 +13,7 @@
         "eps": 1e-8
     },
     "transformer_llm": {
-        "vocab_size": 2000,
+        "vocab_size": 32000,
         "max_sequence_length": 2048,
         "d_model": 768,
         "num_layers": 12,
@@ -21,7 +21,8 @@
         "d_ff": 6400,
         "rope_theta": 10000,
         "device": "cuda",
-        "dtype": "bfloat16"
+        "dtype": "bfloat16",
+        "experiments": {}
     },
     "annealing_configuration": {
         "zero_iters": 0,

@@ -30,3 +30,9 @@ class SwiGlu(nn.Module):
         return self.w2(
             w1x * torch.sigmoid(w1x) * self.w3(x),
         )
+
+class SiLU(nn.Module):
+    def forward(
+        self, x: Float[torch.Tensor, "... d_model"]
+    ) -> Float[torch.Tensor, "... d_model"]:
+        return x * torch.sigmoid(x)

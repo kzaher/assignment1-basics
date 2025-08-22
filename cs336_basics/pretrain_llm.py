@@ -12,6 +12,7 @@ import json
 import extensions
 import dataclasses
 import logging
+import pandas as pd
 
 extensions.setup_default_logging()
 
@@ -65,25 +66,45 @@ def main(argv: abc.Sequence[str]):
             parameter_sweep_configuration = (
                 configuration.ParameterSweepConfiguration.from_dict(json.load(f))
             )
-        def update_configuration(c: configuration.PretrainingConfiguration, parameter_override: configuration.ParameterOverride, override_value: object):
-            c = extensions.replace_recursively(c, lambda x: x.training_loop.name, f'{c.training_loop.name}.{parameter_override.path}')
-            c = dataclasses.replace(c, suffix=f"{parameter_override.path}={override_value}")
+
+        def update_configuration(paths: list[str], values: list[object]):
+            assert len(paths) == len(values)
+            c = configuration_instance
             c = extensions.replace_recursively(
                 c,
-                lambda x: eval("x." + parameter_override.path, locals={"x": x}),
-                override_value,
+                lambda x: x.training_loop.name,
+                f'{c.training_loop.name}.{",".join(paths)}',
             )
+            suffix = ",".join([f"{path}={value}" for path, value in zip(paths, values)])
+            c = dataclasses.replace(c, suffix=suffix)
+            for path, value in zip(paths, values):
+                c = extensions.replace_recursively(
+                    c,
+                    lambda x: eval("x." + path, locals={"x": x}),
+                    value,
+                )
             return c
 
-        all_configurations = [
-            lambda c, parameter_override=parameter_override, override_value=override_value: (
-                update_configuration(c, parameter_override=parameter_override, override_value=override_value)
+        all_configurations = (
+            pd.DataFrame(
+                [
+                    {
+                        "i": parameter_index,
+                        "path": parameter_override.path,
+                        "value": override_value,
+                    }
+                    for parameter_override in parameter_sweep_configuration.values
+                    for parameter_index, override_value in enumerate(parameter_override.values)
+                ]
             )
-            for parameter_override in parameter_sweep_configuration.values
-            for override_value in parameter_override.values
-        ]
-        for configuration_value_mutation in all_configurations:
-            mutated_configuration = configuration_value_mutation(configuration_instance)
+            .groupby("i")
+            .apply(
+                lambda df: update_configuration(
+                    paths=df["path"].tolist(), values=df["value"].tolist()
+                )
+            )
+        )
+        for mutated_configuration in all_configurations:
             assert mutated_configuration != configuration_instance
             assert mutated_configuration.suffix
             assert (

@@ -4,6 +4,7 @@ from cs336_basics.nn import rms_norm
 from cs336_basics.nn import embedding
 from cs336_basics.nn import linear
 from cs336_basics.nn import softmax
+from cs336_basics.pretraining import configuration
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -19,6 +20,7 @@ class TransformerLm(nn.Module):
         num_heads: int,
         d_ff: int,
         rope_theta: float,
+        experiments: configuration.ArchitectureExperiments = configuration.ArchitectureExperiments(),
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
     ):
@@ -36,6 +38,7 @@ class TransformerLm(nn.Module):
                     theta=rope_theta,
                     device=device,
                     dtype=dtype,
+                    experiments=experiments
                 )
                 for _ in range(num_layers)
             ]

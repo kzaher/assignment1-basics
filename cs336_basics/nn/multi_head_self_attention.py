@@ -1,6 +1,7 @@
 from cs336_basics.nn import scaled_dot_product_attention
 from cs336_basics.nn import rope
 from cs336_basics.nn import linear
+from cs336_basics.pretraining import configuration
 from torch import nn
 import torch
 from torch import Tensor
@@ -15,6 +16,7 @@ class MultiHeadSelfAttention(nn.Module):
         num_heads: int,
         d_key: int,
         d_value: int,
+        experiments: configuration.ArchitectureExperiments = configuration.ArchitectureExperiments(),
         max_sequence_length: int | None = None,
         theta: float | None = None,
         device: torch.types.Device = None,
@@ -25,7 +27,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.num_heads = num_heads
         self.device = device
         assert d_model % num_heads == 0
-        if theta and max_sequence_length:
+        if theta and max_sequence_length and not experiments.use_nope:
             self.rope = rope.Rope(
                 theta=theta,
                 d_k=d_model // num_heads,

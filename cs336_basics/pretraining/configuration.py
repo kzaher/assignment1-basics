@@ -19,6 +19,11 @@ class AnnealingConfiguration:
     min_learning_rate: float
     cosine_cycle_iters: int
 
+@dataclasses.dataclass(frozen=True)
+class ArchitectureExperiments:
+    use_nope: bool | None = None
+    rms_post_norm: bool | None = None
+    ff_type: str | None = None
 
 @dataclasses.dataclass(frozen=True)
 class TransformerLlmConfiguration:
@@ -31,7 +36,7 @@ class TransformerLlmConfiguration:
     rope_theta: float
     device: str
     dtype: str
-
+    experiments: ArchitectureExperiments
 
 @dataclasses.dataclass(frozen=True)
 class LlmPretrainingTrainingLoopConfiguration:
@@ -58,6 +63,8 @@ class ParameterOverride:
     path: str
     float_values: list[float] | None
     int_values: list[int] | None
+    string_values: list[str] | None
+    bool_values: list[bool] | None
 
     @property
     def values(self):
@@ -65,6 +72,10 @@ class ParameterOverride:
             return self.float_values
         elif self.int_values is not None:
             return self.int_values
+        elif self.string_values is not None:
+            return self.string_values
+        elif self.bool_values is not None:
+            return self.bool_values
         else:
             raise Exception("Values need to be specified")
 

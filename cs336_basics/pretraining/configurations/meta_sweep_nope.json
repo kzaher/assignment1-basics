@@ -1,0 +1,11 @@
+{
+    "values": [
+        {
+            "path": "training_loop.transformer_llm.experiments.use_nope",
+            "bool_values": [
+                false,
+                true
+            ]
+        }
+    ]
+}

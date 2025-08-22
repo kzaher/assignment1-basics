@@ -1,0 +1,22 @@
+{
+    "values": [
+        {
+            "path": "training_loop.batch_size",
+            "int_values": [
+                512,
+                256,
+                128,
+                64
+            ]
+        },
+        {
+            "path": "training_loop.context_length",
+            "int_values": [
+                32,
+                64,
+                128,
+                256
+            ]
+        }
+    ]
+}
