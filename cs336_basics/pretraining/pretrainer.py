@@ -45,7 +45,7 @@ class Pretrainer:
             rope_theta=lm_configuration.rope_theta,
             device=lm_configuration.device,
             dtype=getattr(torch, lm_configuration.dtype or "float32"),
-            experiments=lm_configuration.experiments
+            experiments=lm_configuration.experiments,
         )
         model.register_buffer("start_time", torch.tensor(time.time()))
         self._model = torch.compile(model)
@@ -60,6 +60,7 @@ class Pretrainer:
             betas=(optimizer_configuration.betas[0], optimizer_configuration.betas[1]),
             eps=optimizer_configuration.eps,
         )
+        self._run_id: str | None = None
 
     def _checkpoint_exists(self, i: int) -> str | None:
         return (
@@ -98,18 +99,17 @@ class Pretrainer:
             ]
             checkpoint_path = self._checkpoint_exists(checkpoint_iteration)
         assert checkpoint_path
-        self._i = (
-            extensions.load_checkpoint(
-                src=checkpoint_path, model=self._model, optimizer=self._optimizer
-            )
-            + 1
+        metadata = extensions.load_checkpoint(
+            src=checkpoint_path, model=self._model, optimizer=self._optimizer
         )
+        self._i = int(metadata["i"]) + 1
+        self._run_id = str(metadata["run_id"])
 
     def _persist_checkpoint(self):
         extensions.save_checkpoint(
             self._model,
             self._optimizer,
-            self._i,
+            metadata={"i": self._i, "run_id": self._run_id},
             out=self._configuration.checkpoint_path(self._i),
         )
         with open(self._configuration.checkpoint_written_path(self._i), "wb") as f:
@@ -418,13 +418,16 @@ class Pretrainer:
         )
         logger.info("Checked tokens are valid")
 
+        wandb_kw_args = {"id": self._run_id, "resume": "must"} if self._run_id else {}
         with wandb.init(
             # Set the project where this run will be logged
             project=self._configuration.training_loop.name,
             # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
             name=f"{self._configuration.suffix or 'experiment'} {datetime.datetime.fromtimestamp(self._model.start_time.item(), datetime.timezone.utc)} timestamp={self._model.start_time.item()}",
             config=dataclasses.asdict(self._configuration),
-        ):
+            **wandb_kw_args,
+        ) as run:
+            self._run_id = run.id
             self._run_training_loop(
                 tokenized_training_data=tokenized_training_data,
                 tokenized_validation_data=tokenized_validation_data,

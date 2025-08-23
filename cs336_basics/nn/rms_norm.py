@@ -25,4 +25,5 @@ class RmsNorm(nn.Module):
             torch.einsum("...d,...d->...", x_at_least32, x_at_least32) / self.d_model
             + self.eps
         )
-        return torch.einsum("...d,...,d->...d", x, rms_inverse, self.weight).to(self.dtype)
+        x = torch.einsum("...d,...,d->...d", x, rms_inverse, self.weight).to(self.dtype)
+        return x

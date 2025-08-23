@@ -22,7 +22,7 @@ class AnnealingConfiguration:
 @dataclasses.dataclass(frozen=True)
 class ArchitectureExperiments:
     use_nope: bool | None = None
-    rms_post_norm: bool | None = None
+    rms_post_norm: str | None = None
     ff_type: str | None = None
 
 @dataclasses.dataclass(frozen=True)

@@ -31,7 +31,7 @@ def sample(
     temperature: float,
     nucleus_p: float,
 ) -> Float[torch.Tensor, "... batch_size"]:
-    logits = model._orig_mod(in_indices=in_indices)[..., -1, :]
+    logits = model(in_indices=in_indices)[..., -1, :]
     if temperature:
         logits = logits / temperature
     logits = softmax.Softmax(dim=-1)(logits)

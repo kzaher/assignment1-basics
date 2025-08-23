@@ -2,6 +2,7 @@ from torch import nn
 from cs336_basics.nn import multi_head_self_attention
 from cs336_basics.nn import nonlinear
 from cs336_basics.nn import rms_norm
+from cs336_basics.nn import dyt
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -22,6 +23,12 @@ class TransformerBlock(nn.Module):
     ):
         super().__init__()
         self.ln1 = rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
+        d_alpha = {"dyt": 1, "dyt_full": d_model}.get(experiments.rms_post_norm, None)
+        self.lnd1 = (
+            dyt.DyT(d_model=d_model, d_alpha=d_alpha, device=device, dtype=dtype)
+            if d_alpha is not None
+            else None
+        )
         self.attn = multi_head_self_attention.MultiHeadSelfAttention(
             d_model=d_model,
             num_heads=num_heads,
@@ -31,17 +38,22 @@ class TransformerBlock(nn.Module):
             theta=theta,
             device=device,
             dtype=dtype,
-            experiments=experiments
+            experiments=experiments,
         )
         self.ln2 = rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
-        if experiments.ff_type == 'silu':
+        self.lnd2 = (
+            dyt.DyT(d_model=d_model, d_alpha=d_alpha, device=device, dtype=dtype)
+            if d_alpha is not None
+            else None
+        )
+        if experiments.ff_type == "silu":
             self.ffn = nonlinear.SiLU()
         elif experiments.ff_type is None:
             self.ffn = nonlinear.SwiGlu(
                 d_model=d_model, d_ff=d_ff, device=device, dtype=dtype
             )
         else:
-            raise Exception(f'ff_type is unknown: {experiments.ff_type}')
+            raise Exception(f"ff_type is unknown: {experiments.ff_type}")
         self.experiments = experiments
 
     def forward(
@@ -49,7 +61,39 @@ class TransformerBlock(nn.Module):
         x: Float[Tensor, "... sequence_length d_model"],
         token_positions: Int[Tensor, "... sequence_length d_model"] | None = None,
     ) -> Float[Tensor, "... sequence_length d_model"]:
-        if self.experiments.rms_post_norm:
+        if (
+            self.experiments.rms_post_norm is None
+            or self.experiments.rms_post_norm == "post"
+        ):
+            attention_output: Float[Tensor, "... sequence_length d_model"] = (
+                x
+                + self.attn(
+                    self.ln1(x),
+                    token_positions=(
+                        torch.arange(x.size(-2))
+                        if token_positions is None
+                        else token_positions
+                    ),
+                )
+            )
+            return attention_output + self.ffn(self.ln2(attention_output))
+        elif (
+            self.experiments.rms_post_norm == "dyt"
+            or self.experiments.rms_post_norm == "dyt_full"
+        ):
+            attention_output: Float[Tensor, "... sequence_length d_model"] = (
+                x
+                + self.attn(
+                    self.lnd1(x),
+                    token_positions=(
+                        torch.arange(x.size(-2))
+                        if token_positions is None
+                        else token_positions
+                    ),
+                )
+            )
+            return attention_output + self.ffn(self.lnd2(attention_output))
+        elif self.experiments.rms_post_norm == "pre":
             attention_output = self.ln1(
                 x
                 + self.attn(
@@ -62,11 +106,18 @@ class TransformerBlock(nn.Module):
                 )
             )
             return self.ln2(attention_output + self.ffn(attention_output))
-
-        attention_output: Float[Tensor, "... sequence_length d_model"] = x + self.attn(
-            self.ln1(x),
-            token_positions=(
-                torch.arange(x.size(-2)) if token_positions is None else token_positions
-            ),
-        )
-        return attention_output + self.ffn(self.ln2(attention_output))
+        elif self.experiments.rms_post_norm == "remove":
+            attention_output: Float[Tensor, "... sequence_length d_model"] = (
+                x
+                + self.attn(
+                    x,
+                    token_positions=(
+                        torch.arange(x.size(-2))
+                        if token_positions is None
+                        else token_positions
+                    ),
+                )
+            )
+            return attention_output + self.ffn(attention_output)
+        else:
+            raise Exception(f"Unknown rms norm: {self.experiments.rms_post_norm}")

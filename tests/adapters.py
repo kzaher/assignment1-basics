@@ -465,7 +465,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return basics_nonlinear.SiLU()(in_features)
 
 
 def run_get_batch(
@@ -607,7 +607,7 @@ def run_save_checkpoint(
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
     return extensions.save_checkpoint(
-        model=model, optimizer=optimizer, iteration=iteration, out=out
+        model=model, optimizer=optimizer, metadata={'i': iteration}, out=out
     )
 
 
@@ -629,7 +629,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    return extensions.load_checkpoint(src=src, model=model, optimizer=optimizer)
+    return extensions.load_checkpoint(src=src, model=model, optimizer=optimizer)['i']
 
 
 def get_tokenizer(

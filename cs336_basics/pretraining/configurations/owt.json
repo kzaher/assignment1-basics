@@ -32,8 +32,8 @@
         "min_learning_rate": 0.00001,
         "cosine_cycle_iters": 10000
     },
-    "context_length": 256,
-    "batch_size": 64,
+    "context_length": 512,
+    "batch_size": 32,
     "initial_max_l2_norm": 0.7,
     "max_iterations": 6000,
     "time_limit_in_seconds": 3600

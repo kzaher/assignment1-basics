@@ -35,6 +35,8 @@ class AdamW(torch.optim.Optimizer):
             eps = group["eps"]
             weight_decay = group["weight_decay"]
             for p in group["params"]:
+                if p.grad is None:
+                    continue
                 p_state = self.state[p]
                 t = p_state.get("t", 0) + 1
                 p_state["t"] = t

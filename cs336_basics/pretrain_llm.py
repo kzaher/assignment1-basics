@@ -2,6 +2,13 @@
 uv run python3 cs336_basics/pretrain_llm.py --configuration_path=cs336_basics/pretraining/configurations/tiny_stories.json
 uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json
 uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep.json
+
+sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_vocab_batches.json ;
+sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json ;
+sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_nope.json ;
+sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_norm.json ;
+sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_rope_params.json ;
+
 """
 
 import sys
@@ -17,7 +24,9 @@ import pandas as pd
 extensions.setup_default_logging()
 
 
-def run_configuration(configuration_instance: configuration.PretrainingConfiguration):
+def run_configuration(configuration_instance: configuration.PretrainingConfiguration, dry_run: bool):
+    if dry_run:
+        return
     pretrainer_engine = pretrainer.Pretrainer(configuration=configuration_instance)
     pretrainer_engine.load_latest_checkpoint()
     pretrainer_engine.train()
@@ -43,6 +52,13 @@ def main(argv: abc.Sequence[str]):
         required=False,
         default=None,
         help="Output directory path",
+    )
+    parser.add_argument(
+        "--dry_run",
+        type=bool,
+        required=False,
+        default=False,
+        help="If only the configurations are validated and the model isn't trained",
     )
     parser.add_argument(
         "--checkpoint", type=int, required=False, default=None, help="Checkpoint index"
@@ -115,9 +131,9 @@ def main(argv: abc.Sequence[str]):
                 "modified_configuration=%s",
                 json.dumps(dataclasses.asdict(mutated_configuration), indent=4),
             )
-            run_configuration(mutated_configuration)
+            run_configuration(mutated_configuration, dry_run=args.dry_run)
     else:
-        run_configuration(configuration_instance=configuration_instance)
+        run_configuration(configuration_instance=configuration_instance, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
