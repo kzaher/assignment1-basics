@@ -1,5 +1,5 @@
 {
-    "name": "owt_sweep",
+    "name": "owt_introspect",
     "training_data_path": "data/owt_train.txt",
     "validation_data_path": "data/owt_valid.txt",
     "checkpoint_persist_modulus": 500,

@@ -309,8 +309,11 @@ class Pretrainer:
         cross_entropy_loss = cross_entropy.CrossEntropyLoss()
         total_gradient_value = 1e6
         distribution_of_gradient_values = []
+
+        activation_recorder = extensions.ActivationRecorder(self._model)
         while True:
             start = time.time()
+            recorder = activation_recorder.intercept_activations() if self._i % 20 == 0 else None
             self._optimizer.zero_grad()
             self._set_annealed_learning_rate()
             (training_batch, target) = extensions.get_batch(
@@ -339,8 +342,7 @@ class Pretrainer:
             grads1, grads2, grads3, grads4, grads5, grads6, grads7 = (
                 statistics.quantiles(distribution_of_gradient_values, n=8)
             )
-            wandb.log(
-                {
+            log_args = {
                     "training_loss": loss.item(),
                     "i": self._i,
                     "clipped_gradients": int(clipped_gradients),
@@ -356,8 +358,7 @@ class Pretrainer:
                     "grads7": grads7,
                     "grads8": max(distribution_of_gradient_values),
                     "step_time": time.time() - start,
-                }
-            )
+            }
             should_stop = self.should_stop()
             if (
                 self._i
@@ -380,15 +381,18 @@ class Pretrainer:
                             device=self._configuration.training_loop.transformer_llm.device,
                         ),
                     )
-                wandb.log(
-                    {
+                log_args |= {
                         "checkpoint_save_time": time.time() - start_save,
                         "validation_loss": validation_loss.item(),
                     }
-                )
                 gc.collect()
                 torch.cuda.empty_cache()
             self._i += 1
+            if recorder is not None:
+                log_args |= recorder.activation_histograms
+                log_args |= recorder.activation_std
+                recorder.remove_all()
+            wandb.log(log_args)
             if should_stop:
                 logging.info(
                     f"Training ended: max_iterations={self._configuration.training_loop.max_iterations}, time_limit={self._configuration.training_loop.time_limit_in_seconds}"

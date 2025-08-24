@@ -1,13 +1,13 @@
 """
-uv run python3 cs336_basics/pretrain_llm.py --configuration_path=cs336_basics/pretraining/configurations/tiny_stories.json
-uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json
-uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep.json
+uv run python3 cs336_basics/pretrain.py --configuration_path=cs336_basics/pretraining/configurations/tiny_stories.json
+uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json
+uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep.json
 
-sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_vocab_batches.json ;
-sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json ;
-sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_nope.json ;
-sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_norm.json ;
-sudo uv run cs336_basics/pretrain_llm.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_rope_params.json ;
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_vocab_batches.json ;
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json ;
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_nope.json ;
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_norm.json ;
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_rope_params.json ;
 
 """
 

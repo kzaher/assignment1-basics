@@ -8,9 +8,11 @@ import numpy.typing as npt
 from numpy.lib.stride_tricks import as_strided
 import typing
 import os
+import wandb
+import dataclasses
+import torch
 
 T = TypeVar("T")
-
 
 
 def cosine_learning_rate(
@@ -122,3 +124,186 @@ def load_checkpoint(
     model_to_load.load_state_dict(state["model_state"])
     optimizer.load_state_dict(state["optimizer_state"])
     return state["metadata"]
+
+
+@dataclasses.dataclass
+class HistogramRecorderResult:
+    histogram: wandb.Histogram
+    mean: float
+    std: float
+
+
+class HistogramRecorder:
+    def __init__(self, resolution: int = 101, min=-1, max=1):
+        self._cached_range = {}
+        self._resolution = resolution
+        self._min = -1
+        self._max = 1
+
+    @torch.no_grad()
+    @torch._dynamo.disable   # <— keep this OUT of the compiled graph
+    def calculate_histogram(self, name: str, x: torch.Tensor) -> wandb.Histogram:
+        x = x.detach()
+
+        mean = x.mean()
+        std = x.std()
+
+        max_limit = max(abs(mean + 3 * std), abs(mean - 3 * std), 0.1)
+
+        self._cached_range[name] = (
+            self._cached_range.get(name, 3.0) * 0.99 + 0.01 * max_limit.cpu().item()
+        )
+
+        x = 1 / self._cached_range[name] * x
+
+        return HistogramRecorderResult(
+            histogram=wandb.Histogram(
+                np_histogram=(
+                    torch.histc(
+                        x.to(torch.float32),
+                        min=self._min,
+                        max=self._max,
+                        bins=self._resolution,
+                    )
+                    .cpu()
+                    .numpy(),
+                    np.linspace(
+                        self._min * self._cached_range[name],
+                        self._max * self._cached_range[name],
+                        self._resolution + 1,
+                    ),
+                )
+            ),
+            mean=mean,
+            std=std,
+        )
+
+
+class PendingActivationRecording:
+    def __init__(
+        self,
+        hooks: list[object],
+        input_activations: dict[str, HistogramRecorderResult],
+        output_activations: dict[str, HistogramRecorderResult],
+    ):
+        self._hooks = hooks
+        self._input_activations = input_activations
+        self._output_activations = output_activations
+
+    @property
+    def input_activations(self):
+        return self._input_activations
+
+    @property
+    def output_activations(self):
+        return self._output_activations
+
+    @property
+    def output_activations_std(self, order: list[str]):
+        return [self._output_activations[name].std for name in order]
+
+    @property
+    def activation_histograms(self) -> dict[str, wandb.Histogram]:
+        return {
+            f"activation/input/histogram/{name}": activation.histogram
+            for name, activation in recorder.input_activations.items()
+        } | {
+            f"activation/output/histogram/{name}": activation.histogram
+            for name, activation in recorder.output_activations.items()
+        }
+
+    @property
+    def activation_std(self):
+        return {
+            f"activation/input/std/{name}": result.std
+            for name, result in self.input_activations.items()
+        } | {
+            f"activation/output/std/{name}": result.std
+            for name, result in self.output_activations.items()
+        }
+
+    def remove_all(self):
+        for hook in self._hooks:
+            hook.remove()
+
+
+class PendingActivationRecording:
+    def __init__(
+        self,
+        hooks: list[object],
+        input_activations: dict[str, HistogramRecorderResult],
+        output_activations: dict[str, HistogramRecorderResult],
+    ):
+        self._hooks = hooks
+        self._input_activations = input_activations
+        self._output_activations = output_activations
+
+    @property
+    def input_activations(self):
+        return self._input_activations
+
+    @property
+    def output_activations(self):
+        return self._output_activations
+
+    @property
+    def activation_histograms(self) -> dict[str, wandb.Histogram]:
+        return {
+            f"activation/input/histogram/{name}": activation.histogram
+            for name, activation in self.input_activations.items()
+        } | {
+            f"activation/output/histogram/{name}": activation.histogram
+            for name, activation in self.output_activations.items()
+        }
+
+    @property
+    def activation_std(self):
+        return {
+            f"activation/input/std/{name}": result.std
+            for name, result in self.input_activations.items()
+        } | {
+            f"activation/output/std/{name}": result.std
+            for name, result in self.output_activations.items()
+        }
+
+    def remove_all(self):
+        for hook in self._hooks:
+            hook.remove()
+
+
+class ActivationRecorder:
+    def __init__(self, module: nn.Module, filter_types: set[type] | None = None):
+        self._module = module
+        self._filter_types = filter_types
+        self._input_activation_recorder = HistogramRecorder()
+        self._output_activation_recorder = HistogramRecorder()
+
+    def intercept_activations(self) -> PendingActivationRecording:
+        input_activations = {}
+        output_activations = {}
+        hooks = []
+        for name, module in self._module.named_modules():
+            if not (self._filter_types is None or type(module) in self._filter_types):
+                continue
+
+            def register_activation(
+                module: nn.Module, i: torch.Tensor, o: torch.Tensor, name=name
+            ):
+                input_activations[name] = (
+                    self._input_activation_recorder.calculate_histogram(
+                        name=name, x=i[0]
+                    )
+                )
+                output_activations[name] = (
+                    self._output_activation_recorder.calculate_histogram(
+                        name=name, x=o[0]
+                    )
+                )
+
+            hooks.append(module.register_forward_hook(register_activation))
+
+        return PendingActivationRecording(
+            hooks=hooks,
+            input_activations=input_activations,
+            output_activations=output_activations,
+        )
