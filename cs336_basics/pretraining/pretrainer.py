@@ -308,12 +308,16 @@ class Pretrainer:
     def _run_training_loop(self, tokenized_training_data, tokenized_validation_data):
         cross_entropy_loss = cross_entropy.CrossEntropyLoss()
         total_gradient_value = 1e6
-        distribution_of_gradient_values = []
 
         activation_recorder = extensions.ActivationRecorder(self._model)
+        gradient_histogram_recorder = extensions.HistogramRecorder()
         while True:
             start = time.time()
-            recorder = activation_recorder.intercept_activations() if self._i % 20 == 0 else None
+            pending_activation_recording = (
+                activation_recorder.intercept_activations()
+                if self._i % 50 == 0
+                else None
+            )
             self._optimizer.zero_grad()
             self._set_annealed_learning_rate()
             (training_batch, target) = extensions.get_batch(
@@ -335,30 +339,8 @@ class Pretrainer:
                     max_l2_norm=self._configuration.training_loop.initial_max_l2_norm,
                 )
             )
-            distribution_of_gradient_values.append(total_gradient_value)
-            distribution_of_gradient_values = distribution_of_gradient_values[-1000:]
-
             self._optimizer.step()
-            grads1, grads2, grads3, grads4, grads5, grads6, grads7 = (
-                statistics.quantiles(distribution_of_gradient_values, n=8)
-            )
-            log_args = {
-                    "training_loss": loss.item(),
-                    "i": self._i,
-                    "clipped_gradients": int(clipped_gradients),
-                    "lr0": list(self.get_lrs())[0],
-                    "grad": total_gradient_value,
-                    "grads0": min(distribution_of_gradient_values),
-                    "grads1": grads1,
-                    "grads2": grads2,
-                    "grads3": grads3,
-                    "grads4": grads4,
-                    "grads5": grads5,
-                    "grads6": grads6,
-                    "grads7": grads7,
-                    "grads8": max(distribution_of_gradient_values),
-                    "step_time": time.time() - start,
-            }
+            log_args = {}
             should_stop = self.should_stop()
             if (
                 self._i
@@ -382,17 +364,28 @@ class Pretrainer:
                         ),
                     )
                 log_args |= {
-                        "checkpoint_save_time": time.time() - start_save,
-                        "validation_loss": validation_loss.item(),
-                    }
+                    "checkpoint_save_time": time.time() - start_save,
+                    "validation_loss": validation_loss.item(),
+                }
                 gc.collect()
                 torch.cuda.empty_cache()
             self._i += 1
-            if recorder is not None:
-                log_args |= recorder.activation_histograms
-                log_args |= recorder.activation_std
-                recorder.remove_all()
-            wandb.log(log_args)
+            if pending_activation_recording is not None:
+                log_args |= pending_activation_recording.logs
+                log_args |= extensions.record_gradients(
+                    self._model, gradient_histogram_recorder
+                )
+                pending_activation_recording.remove_all()
+                gc.collect()
+                # torch.cuda.empty_cache()
+            wandb.log(log_args | {
+                "training_loss": loss.item(),
+                "i": self._i,
+                "clipped_gradients": int(clipped_gradients),
+                "lr0": list(self.get_lrs())[0],
+                "grad": total_gradient_value,
+                "step_time": time.time() - start,
+            })
             if should_stop:
                 logging.info(
                     f"Training ended: max_iterations={self._configuration.training_loop.max_iterations}, time_limit={self._configuration.training_loop.time_limit_in_seconds}"

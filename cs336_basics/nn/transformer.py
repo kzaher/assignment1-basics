@@ -46,12 +46,14 @@ class TransformerBlock(nn.Module):
             if d_alpha is not None
             else None
         )
-        if experiments.ff_type == "silu":
-            self.ffn = nonlinear.SiLU()
-        elif experiments.ff_type is None:
+        if experiments.ff_type is None:
             self.ffn = nonlinear.SwiGlu(
                 d_model=d_model, d_ff=d_ff, device=device, dtype=dtype
             )
+        elif experiments.ff_type == "silu":
+            self.ffn = nonlinear.SiLU()
+        elif experiments.ff_type == "relu_soft":
+            self.ffn = nonlinear.ReluSoft(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         else:
             raise Exception(f"ff_type is unknown: {experiments.ff_type}")
         self.experiments = experiments

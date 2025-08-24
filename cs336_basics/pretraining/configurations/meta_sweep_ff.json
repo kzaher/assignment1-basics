@@ -3,7 +3,7 @@
         {
             "path": "training_loop.transformer_llm.experiments.ff_type",
             "string_values": [
-                "silu",
+                "relu_soft",
                 null
             ]
         }

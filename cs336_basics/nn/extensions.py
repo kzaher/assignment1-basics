@@ -4,6 +4,7 @@ from typing import TypeVar
 from collections import abc
 import math
 import torch
+import numpy as np
 import numpy.typing as npt
 from numpy.lib.stride_tricks import as_strided
 import typing
@@ -131,6 +132,14 @@ class HistogramRecorderResult:
     histogram: wandb.Histogram
     mean: float
     std: float
+    name: str
+
+    def logs(self, group: str):
+        return {
+            f"{group}/histogram/{self.name}": self.histogram,
+            f"{group}/std/{self.name}": self.std,
+            f"{group}/mean/{self.name}": self.mean,
+        }
 
 
 class HistogramRecorder:
@@ -141,22 +150,23 @@ class HistogramRecorder:
         self._max = 1
 
     @torch.no_grad()
-    @torch._dynamo.disable   # <— keep this OUT of the compiled graph
+    @torch._dynamo.disable  # <— keep this OUT of the compiled graph
     def calculate_histogram(self, name: str, x: torch.Tensor) -> wandb.Histogram:
         x = x.detach()
 
-        mean = x.mean()
-        std = x.std()
+        mean = x.mean().cpu().item()
+        std = x.std().cpu().item()
 
-        max_limit = max(abs(mean + 3 * std), abs(mean - 3 * std), 0.1)
+        max_limit = max(abs(mean + 3 * std), abs(mean - 3 * std), 1e-11)
 
         self._cached_range[name] = (
-            self._cached_range.get(name, 3.0) * 0.99 + 0.01 * max_limit.cpu().item()
+            self._cached_range.get(name, 3 * std) * 0.95 + 0.05 * max_limit
         )
 
         x = 1 / self._cached_range[name] * x
 
         return HistogramRecorderResult(
+            name=name,
             histogram=wandb.Histogram(
                 np_histogram=(
                     torch.histc(
@@ -199,27 +209,15 @@ class PendingActivationRecording:
         return self._output_activations
 
     @property
-    def output_activations_std(self, order: list[str]):
-        return [self._output_activations[name].std for name in order]
-
-    @property
-    def activation_histograms(self) -> dict[str, wandb.Histogram]:
+    def logs(self) -> dict[str, wandb.Histogram]:
         return {
-            f"activation/input/histogram/{name}": activation.histogram
-            for name, activation in recorder.input_activations.items()
+            k: v
+            for activation in self.input_activations.values()
+            for k, v in activation.logs("activation/input").items()
         } | {
-            f"activation/output/histogram/{name}": activation.histogram
-            for name, activation in recorder.output_activations.items()
-        }
-
-    @property
-    def activation_std(self):
-        return {
-            f"activation/input/std/{name}": result.std
-            for name, result in self.input_activations.items()
-        } | {
-            f"activation/output/std/{name}": result.std
-            for name, result in self.output_activations.items()
+            k: v
+            for activation in self.output_activations.values()
+            for k, v in activation.logs("activation/output").items()
         }
 
     def remove_all(self):
@@ -227,48 +225,7 @@ class PendingActivationRecording:
             hook.remove()
 
 
-class PendingActivationRecording:
-    def __init__(
-        self,
-        hooks: list[object],
-        input_activations: dict[str, HistogramRecorderResult],
-        output_activations: dict[str, HistogramRecorderResult],
-    ):
-        self._hooks = hooks
-        self._input_activations = input_activations
-        self._output_activations = output_activations
-
-    @property
-    def input_activations(self):
-        return self._input_activations
-
-    @property
-    def output_activations(self):
-        return self._output_activations
-
-    @property
-    def activation_histograms(self) -> dict[str, wandb.Histogram]:
-        return {
-            f"activation/input/histogram/{name}": activation.histogram
-            for name, activation in self.input_activations.items()
-        } | {
-            f"activation/output/histogram/{name}": activation.histogram
-            for name, activation in self.output_activations.items()
-        }
-
-    @property
-    def activation_std(self):
-        return {
-            f"activation/input/std/{name}": result.std
-            for name, result in self.input_activations.items()
-        } | {
-            f"activation/output/std/{name}": result.std
-            for name, result in self.output_activations.items()
-        }
-
-    def remove_all(self):
-        for hook in self._hooks:
-            hook.remove()
+SUPPORTED_HISTOGRAM_TYPES = {torch.bfloat16, torch.float32, torch.float64}
 
 
 class ActivationRecorder:
@@ -286,19 +243,24 @@ class ActivationRecorder:
             if not (self._filter_types is None or type(module) in self._filter_types):
                 continue
 
+            @torch._dynamo.disable
             def register_activation(
                 module: nn.Module, i: torch.Tensor, o: torch.Tensor, name=name
             ):
-                input_activations[name] = (
-                    self._input_activation_recorder.calculate_histogram(
-                        name=name, x=i[0]
+                i = i if isinstance(i, torch.Tensor) else (i[0] if len(i) > 0 else None)
+                o = o if isinstance(o, torch.Tensor) else (o[0] if len(o) > 0 else None)
+                if i is not None and i.dtype in SUPPORTED_HISTOGRAM_TYPES:
+                    input_activations[name] = (
+                        self._input_activation_recorder.calculate_histogram(
+                            name=name, x=i
+                        )
                     )
-                )
-                output_activations[name] = (
-                    self._output_activation_recorder.calculate_histogram(
-                        name=name, x=o[0]
+                if o is not None and o.dtype in SUPPORTED_HISTOGRAM_TYPES:
+                    output_activations[name] = (
+                        self._output_activation_recorder.calculate_histogram(
+                            name=name, x=o
+                        )
                     )
-                )
 
             hooks.append(module.register_forward_hook(register_activation))
 
@@ -307,3 +269,20 @@ class ActivationRecorder:
             input_activations=input_activations,
             output_activations=output_activations,
         )
+
+
+@torch.no_grad()
+@torch._dynamo.disable
+def record_gradients(
+    model: nn.Module, histogram_recorder: HistogramRecorder
+) -> dict[str, object]:
+    args = {}
+    for name, param in model.named_parameters():
+        if param.dtype not in SUPPORTED_HISTOGRAM_TYPES:
+            continue
+        if param.grad is None:
+            continue
+        args |= histogram_recorder.calculate_histogram(name=name, x=param.grad).logs(
+            "gradient"
+        )
+    return args
