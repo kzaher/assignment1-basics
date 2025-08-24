@@ -43,7 +43,7 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    linear = basics_linear.Linear(in_features=d_in, out_features=d_out)
+    linear = basics_linear.Linear(in_features=d_in, out_features=d_out, use_bias=False)
     linear.load_state_dict({"weight": weights})
     return linear.forward(in_features)
 
@@ -96,7 +96,7 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    swiglu = basics_nonlinear.SwiGlu(d_model=d_model, d_ff=d_ff)
+    swiglu = basics_nonlinear.SwiGlu(d_model=d_model, use_bias=False, d_ff=d_ff)
     swiglu.load_state_dict(
         {
             "w1.weight": w1_weight,
@@ -165,6 +165,7 @@ def run_multihead_self_attention(
         num_heads=num_heads,
         d_key=q_proj_weight.size(-2),
         d_value=v_proj_weight.size(-2),
+        use_bias=False
     )
     mhsa.load_state_dict(
         {
@@ -221,6 +222,7 @@ def run_multihead_self_attention_with_rope(
         d_value=v_proj_weight.size(-2),
         max_sequence_length=max_seq_len,
         theta=theta,
+        use_bias=False
     )
     mhsa.load_state_dict(
         {
@@ -332,6 +334,7 @@ def run_transformer_block(
         d_ff=d_ff,
         max_sequence_length=max_seq_len,
         theta=theta,
+        use_bias=False
     )
     transformer_block.load_state_dict(weights)
     return transformer_block.forward(in_features)
@@ -424,6 +427,7 @@ def run_transformer_lm(
         num_heads=num_heads,
         d_ff=d_ff,
         rope_theta=rope_theta,
+        use_bias=False
     )
     transformer_lm.load_state_dict(weights)
     return transformer_lm.forward(in_indices)

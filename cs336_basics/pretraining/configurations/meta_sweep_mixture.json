@@ -1,0 +1,73 @@
+{
+    "values": [
+        {
+            "path": "training_loop.transformer_llm.experiments.ff_type",
+            "string_values": [
+                "mixture",
+                "mixture",
+                "mixture",
+                "mixture",
+                "mixture",
+                "mixture",
+                "mixture",
+                "mixture",
+                "mixture",
+                "mixture"
+            ]
+        },
+        {
+            "path": "training_loop.transformer_llm.experiments.enabled_nonlinear",
+            "string_list_values": [
+                [
+                    "gelu"
+                ],
+                [
+                    "identity",
+                    "square",
+                    "cube",
+                    "gelu"
+                ],
+                [
+                    "identity",
+                    "sigmoid",
+                    "gelu"
+                ],
+                [
+                    "identity",
+                    "square",
+                    "sigmoid",
+                    "gelu"
+                ],
+                [
+                    "identity",
+                    "cube",
+                    "sigmoid"
+                ],
+                [
+                    "sigmoid"
+                ],
+                [
+                    "cube",
+                    "sigmoid",
+                    "gelu"
+                ],
+                [
+                    "square",
+                    "cube",
+                    "sigmoid",
+                    "gelu"
+                ],
+                [
+                    "identity",
+                    "square",
+                    "gelu"
+                ],
+                [
+                    "square",
+                    "sigmoid",
+                    "gelu"
+                ]
+            ]
+        }
+    ]
+}

@@ -1,5 +1,5 @@
 {
-    "name": "owt_introspect",
+    "name": "owt",
     "training_data_path": "data/owt_train.txt",
     "validation_data_path": "data/owt_valid.txt",
     "checkpoint_persist_modulus": 500,
@@ -22,6 +22,7 @@
         "rope_theta": 10000,
         "device": "cuda",
         "dtype": "bfloat16",
+        "use_bias": false,
         "experiments": {}
     },
     "annealing_configuration": {

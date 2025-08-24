@@ -43,6 +43,7 @@ class Pretrainer:
             num_heads=lm_configuration.num_heads,
             d_ff=lm_configuration.d_ff,
             rope_theta=lm_configuration.rope_theta,
+            use_bias=lm_configuration.use_bias,
             device=lm_configuration.device,
             dtype=getattr(torch, lm_configuration.dtype or "float32"),
             experiments=lm_configuration.experiments,
@@ -311,6 +312,7 @@ class Pretrainer:
 
         activation_recorder = extensions.ActivationRecorder(self._model)
         gradient_histogram_recorder = extensions.HistogramRecorder()
+        weight_histogram_recorder = extensions.HistogramRecorder()
         while True:
             start = time.time()
             pending_activation_recording = (
@@ -364,8 +366,8 @@ class Pretrainer:
                         ),
                     )
                 log_args |= {
-                    "checkpoint_save_time": time.time() - start_save,
-                    "validation_loss": validation_loss.item(),
+                    "health/checkpoint_save_time": time.time() - start_save,
+                    "metrics/loss/validation": validation_loss.item(),
                 }
                 gc.collect()
                 torch.cuda.empty_cache()
@@ -375,16 +377,19 @@ class Pretrainer:
                 log_args |= extensions.record_gradients(
                     self._model, gradient_histogram_recorder
                 )
+                log_args |= extensions.record_weights(
+                    self._model, weight_histogram_recorder
+                )
                 pending_activation_recording.remove_all()
                 gc.collect()
                 # torch.cuda.empty_cache()
             wandb.log(log_args | {
-                "training_loss": loss.item(),
-                "i": self._i,
-                "clipped_gradients": int(clipped_gradients),
-                "lr0": list(self.get_lrs())[0],
-                "grad": total_gradient_value,
-                "step_time": time.time() - start,
+                "metrics/loss/training": loss.item(),
+                "metrics/lr0": list(self.get_lrs())[0],
+                "health/i": self._i,
+                "health/step_time": time.time() - start,
+                "health/gradient/clipping": int(clipped_gradients),
+                "health/gradient/value": total_gradient_value,
             })
             if should_stop:
                 logging.info(

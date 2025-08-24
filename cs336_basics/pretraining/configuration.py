@@ -24,6 +24,10 @@ class ArchitectureExperiments:
     use_nope: bool | None = None
     rms_post_norm: str | None = None
     ff_type: str | None = None
+    ff_relu_squeeze_factor: float | None = None
+    ff_relu_min: float | None = None
+    enabled_nonlinear: list[str] | None = None
+    activation: str | None = None
 
 @dataclasses.dataclass(frozen=True)
 class TransformerLlmConfiguration:
@@ -36,6 +40,7 @@ class TransformerLlmConfiguration:
     rope_theta: float
     device: str
     dtype: str
+    use_bias: bool
     experiments: ArchitectureExperiments
 
 @dataclasses.dataclass(frozen=True)
@@ -65,6 +70,7 @@ class ParameterOverride:
     int_values: list[int] | None
     string_values: list[str] | None
     bool_values: list[bool] | None
+    string_list_values: list[list[str]] | None
 
     @property
     def values(self):
@@ -76,6 +82,8 @@ class ParameterOverride:
             return self.string_values
         elif self.bool_values is not None:
             return self.bool_values
+        elif self.string_list_values is not None:
+            return self.string_list_values
         else:
             raise Exception("Values need to be specified")
 
@@ -113,7 +121,7 @@ class PretrainingConfiguration:
 
     @property
     def checkpoint_dir(self):
-        return f"{self.experiment_output_path}/checkpoints"
+        return f"{self.experiment_output_path}"
 
     def cached_tokens(self, original_path: str) -> str:
         vocab_size = self.training_loop.transformer_llm.vocab_size

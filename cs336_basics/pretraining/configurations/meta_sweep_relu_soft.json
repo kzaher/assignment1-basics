@@ -1,0 +1,43 @@
+{
+    "values": [
+        {
+            "path": "training_loop.transformer_llm.experiments.ff_type",
+            "string_values": [
+                "relu_soft",
+                "relu_soft",
+                "relu_soft",
+                "relu_soft",
+                "relu_soft",
+                "relu_soft",
+                "relu_soft",
+                "relu_soft"
+            ]
+        },
+        {
+            "path": "training_loop.transformer_llm.experiments.ff_relu_squeeze_factor",
+            "string_values": [
+                10,
+                10,
+                10,
+                1,
+                2,
+                5,
+                15,
+                20
+            ]
+        },
+        {
+            "path": "training_loop.transformer_llm.experiments.ff_relu_min",
+            "string_values": [
+                0.01,
+                0.1,
+                0.001,
+                0.01,
+                0.01,
+                0.01,
+                0.01,
+                0.01
+            ]
+        }
+    ]
+}

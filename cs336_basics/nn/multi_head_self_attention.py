@@ -16,6 +16,7 @@ class MultiHeadSelfAttention(nn.Module):
         num_heads: int,
         d_key: int,
         d_value: int,
+        use_bias: bool,
         experiments: configuration.ArchitectureExperiments = configuration.ArchitectureExperiments(),
         max_sequence_length: int | None = None,
         theta: float | None = None,
@@ -41,16 +42,16 @@ class MultiHeadSelfAttention(nn.Module):
             scaled_dot_product_attention.ScaledDotProductAttention()
         )
         self.q_proj = linear.Linear(
-            in_features=d_model, out_features=d_key, device=device, dtype=dtype
+            in_features=d_model, out_features=d_key, use_bias=use_bias, device=device, dtype=dtype
         )
         self.k_proj = linear.Linear(
-            in_features=d_model, out_features=d_key, device=device, dtype=dtype
+            in_features=d_model, out_features=d_key, use_bias=use_bias, device=device, dtype=dtype
         )
         self.v_proj = linear.Linear(
-            in_features=d_model, out_features=d_value, device=device, dtype=dtype
+            in_features=d_model, out_features=d_value, use_bias=use_bias, device=device, dtype=dtype
         )
         self.output_proj = linear.Linear(
-            in_features=d_value, out_features=d_model, device=device, dtype=dtype
+            in_features=d_value, out_features=d_model, use_bias=use_bias, device=device, dtype=dtype
         )
 
     def forward(

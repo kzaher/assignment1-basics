@@ -9,6 +9,7 @@ sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretrain
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_norm.json ;
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_rope_params.json ;
 
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_relu_soft.json ;
 """
 
 import sys
@@ -86,17 +87,24 @@ def main(argv: abc.Sequence[str]):
         def update_configuration(paths: list[str], values: list[object]):
             assert len(paths) == len(values)
             c = configuration_instance
+            replacements = {'training_loop.transformer_llm.experiments.': 'e.'}
+            def trimm(path: str):
+                for prefix, replacement in replacements.items():
+                    if path.startswith(prefix):
+                        return replacement + path[len(prefix):]
+                return path
+            compressed_paths = [trimm(p) for p in paths]
             c = extensions.replace_recursively(
                 c,
                 lambda x: x.training_loop.name,
-                f'{c.training_loop.name}.{",".join(paths)}',
+                f'{c.training_loop.name}.{",".join(compressed_paths)}',
             )
-            suffix = ",".join([f"{path}={value}" for path, value in zip(paths, values)])
+            suffix = ",".join([f"{path}={value}" for path, value in zip(compressed_paths, values)])
             c = dataclasses.replace(c, suffix=suffix)
             for path, value in zip(paths, values):
                 c = extensions.replace_recursively(
                     c,
-                    lambda x: eval("x." + path, locals={"x": x}),
+                    lambda x: eval("x." + path, {}, {"x": x}),
                     value,
                 )
             return c

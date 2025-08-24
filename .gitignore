@@ -167,3 +167,5 @@ train/*
 wandb/*
 experiments
 data
+
+.devcontainer/.env

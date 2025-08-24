@@ -16,6 +16,8 @@ services:
     environment:
       - UV_CACHE_DIR=/opt/uv-cache
       - VIRTUAL_ENV=/opt/venv
+    env_file:
+      - ./.env
     entrypoint:
     command: sleep infinity
     user: vscode

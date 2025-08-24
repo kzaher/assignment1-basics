@@ -20,6 +20,7 @@ class TransformerLm(nn.Module):
         num_heads: int,
         d_ff: int,
         rope_theta: float,
+        use_bias: bool,
         experiments: configuration.ArchitectureExperiments = configuration.ArchitectureExperiments(),
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
@@ -36,16 +37,17 @@ class TransformerLm(nn.Module):
                     d_ff=d_ff,
                     max_sequence_length=max_sequence_length,
                     theta=rope_theta,
+                    use_bias=use_bias,
+                    experiments=experiments,
                     device=device,
-                    dtype=dtype,
-                    experiments=experiments
+                    dtype=dtype
                 )
                 for _ in range(num_layers)
             ]
         )
         self.ln_final = rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
         self.lm_head = linear.Linear(
-            in_features=d_model, out_features=vocab_size, device=device, dtype=dtype
+            in_features=d_model, out_features=vocab_size, use_bias=use_bias, device=device, dtype=dtype
         )
 
     def forward(

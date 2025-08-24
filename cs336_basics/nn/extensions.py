@@ -286,3 +286,17 @@ def record_gradients(
             "gradient"
         )
     return args
+
+@torch.no_grad()
+@torch._dynamo.disable
+def record_weights(
+    model: nn.Module, weight_recorder: HistogramRecorder
+) -> dict[str, object]:
+    args = {}
+    for name, param in model.named_parameters():
+        if param.dtype not in SUPPORTED_HISTOGRAM_TYPES:
+            continue
+        args |= weight_recorder.calculate_histogram(name=name, x=param).logs(
+            "weight"
+        )
+    return args

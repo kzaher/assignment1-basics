@@ -1,6 +1,8 @@
 from torch import nn
 from cs336_basics.nn import multi_head_self_attention
 from cs336_basics.nn import nonlinear
+from cs336_basics.nn import nonlinear_conjunction
+from cs336_basics.nn import nonlinear_mixture
 from cs336_basics.nn import rms_norm
 from cs336_basics.nn import dyt
 import torch
@@ -17,6 +19,7 @@ class TransformerBlock(nn.Module):
         d_ff: int,
         max_sequence_length: int,
         theta: float,
+        use_bias: bool,
         experiments: configuration.ArchitectureExperiments = configuration.ArchitectureExperiments(),
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
@@ -36,6 +39,7 @@ class TransformerBlock(nn.Module):
             d_value=d_model,
             max_sequence_length=max_sequence_length,
             theta=theta,
+            use_bias=use_bias,
             device=device,
             dtype=dtype,
             experiments=experiments,
@@ -48,12 +52,44 @@ class TransformerBlock(nn.Module):
         )
         if experiments.ff_type is None:
             self.ffn = nonlinear.SwiGlu(
-                d_model=d_model, d_ff=d_ff, device=device, dtype=dtype
+                d_model=d_model, d_ff=d_ff, use_bias=use_bias, device=device, dtype=dtype
             )
         elif experiments.ff_type == "silu":
             self.ffn = nonlinear.SiLU()
         elif experiments.ff_type == "relu_soft":
-            self.ffn = nonlinear.ReluSoft(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
+            assert experiments.ff_relu_squeeze_factor
+            assert experiments.ff_relu_min
+            self.ffn = nonlinear.ReluSoft(
+                d_model=d_model,
+                d_ff=d_ff,
+                squeeze_factor=experiments.ff_relu_squeeze_factor,
+                min_gradient=experiments.ff_relu_min,
+                use_bias=use_bias,
+                device=device,
+                dtype=dtype,
+            )
+        elif experiments.ff_type == "mixture":
+            assert experiments.enabled_nonlinear
+            self.ffn = nonlinear_mixture.MixtureOfNonlinearFeedForward(
+                d_model=d_model,
+                # To normalize for 2 projections
+                d_ff=d_ff * 3 // 2,
+                use_bias=use_bias,
+                enabled=experiments.enabled_nonlinear,
+                device=device,
+                dtype=dtype,
+            )
+        elif experiments.ff_type == "conjunction":
+            assert experiments.enabled_nonlinear
+            self.ffn = nonlinear_conjunction.ConjunctionFeedForward(
+                d_model=d_model,
+                # To normalize for 2 projections
+                d_ff=d_ff * 3 // 2,
+                use_bias=use_bias,
+                enabled=experiments.enabled_nonlinear,
+                device=device,
+                dtype=dtype,
+            )
         else:
             raise Exception(f"ff_type is unknown: {experiments.ff_type}")
         self.experiments = experiments
@@ -83,6 +119,8 @@ class TransformerBlock(nn.Module):
             self.experiments.rms_post_norm == "dyt"
             or self.experiments.rms_post_norm == "dyt_full"
         ):
+            assert self.lnd1
+            assert self.lnd2
             attention_output: Float[Tensor, "... sequence_length d_model"] = (
                 x
                 + self.attn(
