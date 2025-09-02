@@ -47,3 +47,23 @@ gunzip owt_valid.txt.gz
 
 cd ..
 ```
+
+### Experiments:
+
+* [Vocabulary size experiment](https://wandb.ai/ante-materija-gmbh/owt_sweep4.training_loop.transformer_llm.vocab_size?nw=nwuserantematerija)
+* [Batch size experiment](https://wandb.ai/ante-materija-gmbh/owt_sweep.training_loop.batch_size,training_loop.context_length?nw=nwuserantematerija)
+* [Silu experiment](https://wandb.ai/ante-materija-gmbh/owt_sweep.training_loop.transformer_llm.experiments.ff_type?nw=nwuserantematerija)
+* [Nope experiment](https://wandb.ai/ante-materija-gmbh/owt_sweep.training_loop.transformer_llm.experiments.use_nope?nw=nwuserantematerija)
+* [Rope experiment](https://wandb.ai/ante-materija-gmbh/owt_sweep.training_loop.transformer_llm.rope_theta)
+* [Rms experiment](https://wandb.ai/ante-materija-gmbh/owt_sweep.training_loop.transformer_llm.experiments.rms_post_norm)  
+* [Mixture experiment](https://wandb.ai/ante-materija-gmbh/owt_introspect.e.ff_type/runs/anbf5iok?nw=nwuserantematerija) 
+* [ReluSoft experiment](https://wandb.ai/ante-materija-gmbh/owt_introspect.e.ff_type%2Ce.ff_relu_squeeze_factor%2Ce.ff_relu_min?nw=nwuserantematerija)
+
+NextIdeas
+* It appears that the FFReGLU​(x)=(max(0,xW1​)⊗(xV))W2. Try to extend them so that they aren't non linear any longer and that they support multiple inputs.
+* Try to make it attract towards 1, 0, or -1 for both inputs and outputs.
+* The algorithm is to find the biggest amplitude and then backpropagate.
+* Create an experiment. Have a tiny network and try to memorize text. That should reduce the amount of waiting and computation, and then try to perform it on the big one.
+
+* Try to get non linear gradient
+* Uncorrelated signals in a layer

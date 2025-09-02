@@ -1,4 +1,4 @@
-export POD_ID=6wwvsj886w5wx3
+export POD_ID=vi855obf5a5lx2
 read RP_IP RP_SSH_PORT < <(
   curl -sS -H "Authorization: Bearer $RUNPOD_API_KEY" \
     "https://rest.runpod.io/v1/pods/$POD_ID" \

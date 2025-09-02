@@ -22,12 +22,13 @@ class AnnealingConfiguration:
 @dataclasses.dataclass(frozen=True)
 class ArchitectureExperiments:
     use_nope: bool | None = None
-    rms_post_norm: str | None = None
+    rms_norm: str | None = None
     ff_type: str | None = None
     ff_relu_squeeze_factor: float | None = None
     ff_relu_min: float | None = None
     enabled_nonlinear: list[str] | None = None
     activation: str | None = None
+    and_group_size: int | None = None
 
 @dataclasses.dataclass(frozen=True)
 class TransformerLlmConfiguration:

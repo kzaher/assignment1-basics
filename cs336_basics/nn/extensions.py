@@ -12,6 +12,7 @@ import os
 import wandb
 import dataclasses
 import torch
+from contextlib import contextmanager
 
 T = TypeVar("T")
 
@@ -189,35 +190,39 @@ class HistogramRecorder:
         )
 
 
-class PendingActivationRecording:
+class PendingModuleActivationRecording:
     def __init__(
         self,
         hooks: list[object],
         input_activations: dict[str, HistogramRecorderResult],
         output_activations: dict[str, HistogramRecorderResult],
+        input_gradient_activations: dict[str, HistogramRecorderResult],
+        output_gradient_activations: dict[str, HistogramRecorderResult],
     ):
         self._hooks = hooks
         self._input_activations = input_activations
         self._output_activations = output_activations
-
-    @property
-    def input_activations(self):
-        return self._input_activations
-
-    @property
-    def output_activations(self):
-        return self._output_activations
+        self._input_gradient_activations = input_gradient_activations
+        self._output_gradient_activations = output_gradient_activations
 
     @property
     def logs(self) -> dict[str, wandb.Histogram]:
         return {
             k: v
-            for activation in self.input_activations.values()
+            for activation in self._input_activations.values()
             for k, v in activation.logs("activation/input").items()
         } | {
             k: v
-            for activation in self.output_activations.values()
+            for activation in self._output_activations.values()
             for k, v in activation.logs("activation/output").items()
+        } | {
+            k:v
+            for activation in self._input_gradient_activations.values()
+            for k, v in activation.logs("gradient/input").items()
+        } | {
+            k:v
+            for activation in self._output_gradient_activations.values()
+            for k, v in activation.logs("gradient/output").items()
         }
 
     def remove_all(self):
@@ -228,16 +233,35 @@ class PendingActivationRecording:
 SUPPORTED_HISTOGRAM_TYPES = {torch.bfloat16, torch.float32, torch.float64}
 
 
-class ActivationRecorder:
+class ModuleActivationRecorder:
     def __init__(self, module: nn.Module, filter_types: set[type] | None = None):
         self._module = module
         self._filter_types = filter_types
         self._input_activation_recorder = HistogramRecorder()
         self._output_activation_recorder = HistogramRecorder()
+        self._input_gradient_recorder = HistogramRecorder()
+        self._output_gradient_recorder = HistogramRecorder()
 
-    def intercept_activations(self) -> PendingActivationRecording:
+    @classmethod
+    def _record_activation(cls, name: str, x: torch.Tensor, activations: dict[str, torch.Tensor], activation_recorder: HistogramRecorder):
+      x = x if isinstance(x, torch.Tensor) else (x[0] if len(x) > 0 else None)
+      if x is not None and x.dtype in SUPPORTED_HISTOGRAM_TYPES:
+          activations[name] = (
+              activation_recorder.calculate_histogram(
+                  name=name, x=x
+              )
+          )
+
+    @contextmanager
+    def intercept_activations(self, intercept=True):
+        if not intercept:
+            yield None
+            return
+        
         input_activations = {}
         output_activations = {}
+        input_gradient_activations = {}
+        output_gradient_activations = {}
         hooks = []
         for name, module in self._module.named_modules():
             if not (self._filter_types is None or type(module) in self._filter_types):
@@ -247,33 +271,35 @@ class ActivationRecorder:
             def register_activation(
                 module: nn.Module, i: torch.Tensor, o: torch.Tensor, name=name
             ):
-                i = i if isinstance(i, torch.Tensor) else (i[0] if len(i) > 0 else None)
-                o = o if isinstance(o, torch.Tensor) else (o[0] if len(o) > 0 else None)
-                if i is not None and i.dtype in SUPPORTED_HISTOGRAM_TYPES:
-                    input_activations[name] = (
-                        self._input_activation_recorder.calculate_histogram(
-                            name=name, x=i
-                        )
-                    )
-                if o is not None and o.dtype in SUPPORTED_HISTOGRAM_TYPES:
-                    output_activations[name] = (
-                        self._output_activation_recorder.calculate_histogram(
-                            name=name, x=o
-                        )
-                    )
+                ModuleActivationRecorder._record_activation(name, i, input_activations, self._input_activation_recorder)
+                ModuleActivationRecorder._record_activation(name, o, output_activations, self._output_activation_recorder)
+
+            @torch._dynamo.disable
+            def gradient_activation(module: nn.Module, i: torch.Tensor, o: torch.Tensor, name=name):
+                ModuleActivationRecorder._record_activation(name, i, input_gradient_activations, self._input_gradient_recorder)
+                ModuleActivationRecorder._record_activation(name, o, output_gradient_activations, self._output_gradient_recorder)
+
 
             hooks.append(module.register_forward_hook(register_activation))
+            hooks.append(module.register_full_backward_hook(gradient_activation))
 
-        return PendingActivationRecording(
+        activation_recording = PendingModuleActivationRecording(
             hooks=hooks,
             input_activations=input_activations,
             output_activations=output_activations,
+            input_gradient_activations=input_gradient_activations,
+            output_gradient_activations=output_gradient_activations,
         )
+
+        try:
+            yield activation_recording
+        finally:
+            activation_recording.remove_all()
 
 
 @torch.no_grad()
 @torch._dynamo.disable
-def record_gradients(
+def record_weight_gradients(
     model: nn.Module, histogram_recorder: HistogramRecorder
 ) -> dict[str, object]:
     args = {}

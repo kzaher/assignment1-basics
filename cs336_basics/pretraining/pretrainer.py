@@ -71,7 +71,10 @@ class Pretrainer:
         )
 
     def load_latest_checkpoint(self):
-        if self._configuration.checkpoint:
+        if self._configuration.checkpoint == 0:
+            logger.info("Force fresh start")
+            return
+        elif self._configuration.checkpoint is not None:
             checkpoint_path = self._checkpoint_exists(self._configuration.checkpoint)
         else:
             checkpoint_power = 1
@@ -310,92 +313,92 @@ class Pretrainer:
         cross_entropy_loss = cross_entropy.CrossEntropyLoss()
         total_gradient_value = 1e6
 
-        activation_recorder = extensions.ActivationRecorder(self._model)
+        activation_recorder = extensions.ModuleActivationRecorder(self._model)
         gradient_histogram_recorder = extensions.HistogramRecorder()
         weight_histogram_recorder = extensions.HistogramRecorder()
         while True:
             start = time.time()
-            pending_activation_recording = (
-                activation_recorder.intercept_activations()
-                if self._i % 50 == 0
-                else None
-            )
-            self._optimizer.zero_grad()
-            self._set_annealed_learning_rate()
-            (training_batch, target) = extensions.get_batch(
-                tokenized_training_data,
-                batch_size=self._configuration.training_loop.batch_size,
-                context_length=self._configuration.training_loop.context_length,
-                device=self._configuration.training_loop.transformer_llm.device,
-            )
-            loss = cross_entropy_loss(
-                self._model(training_batch.to(torch.int64)),
-                target=target.to(torch.int64).to(
-                    device=self._configuration.training_loop.transformer_llm.device,
-                ),
-            )
-            loss.backward()
-            (clipped_gradients, total_gradient_value) = (
-                extensions.gradient_clipping_with_gradient_value(
-                    self._model.parameters(),
-                    max_l2_norm=self._configuration.training_loop.initial_max_l2_norm,
-                )
-            )
-            self._optimizer.step()
-            log_args = {}
-            should_stop = self.should_stop()
-            if (
-                self._i
-                and self._i
-                % self._configuration.training_loop.checkpoint_persist_modulus
-                == 0
-            ) or should_stop:
-                start_save = time.time()
-                self._persist_checkpoint()
-                (validation_batch, validation_target) = extensions.get_batch(
-                    tokenized_validation_data,
+            with activation_recorder.intercept_activations(
+                intercept=self._i % 50 == 0
+            ) as recorder:
+                self._optimizer.zero_grad()
+                self._set_annealed_learning_rate()
+                (training_batch, target) = extensions.get_batch(
+                    tokenized_training_data,
                     batch_size=self._configuration.training_loop.batch_size,
                     context_length=self._configuration.training_loop.context_length,
                     device=self._configuration.training_loop.transformer_llm.device,
                 )
-                with torch.no_grad():
-                    validation_loss = cross_entropy_loss(
-                        self._model(validation_batch.to(torch.int64)),
-                        target=validation_target.to(torch.int64).to(
-                            device=self._configuration.training_loop.transformer_llm.device,
-                        ),
+                loss = cross_entropy_loss(
+                    self._model(training_batch.to(torch.int64)),
+                    target=target.to(torch.int64).to(
+                        device=self._configuration.training_loop.transformer_llm.device,
+                    ),
+                )
+                loss.backward()
+                (clipped_gradients, total_gradient_value) = (
+                    extensions.gradient_clipping_with_gradient_value(
+                        self._model.parameters(),
+                        max_l2_norm=self._configuration.training_loop.initial_max_l2_norm,
                     )
-                log_args |= {
-                    "health/checkpoint_save_time": time.time() - start_save,
-                    "metrics/loss/validation": validation_loss.item(),
-                }
-                gc.collect()
-                torch.cuda.empty_cache()
-            self._i += 1
-            if pending_activation_recording is not None:
-                log_args |= pending_activation_recording.logs
-                log_args |= extensions.record_gradients(
-                    self._model, gradient_histogram_recorder
                 )
-                log_args |= extensions.record_weights(
-                    self._model, weight_histogram_recorder
+                self._optimizer.step()
+                log_args = {}
+                should_stop = self.should_stop()
+                if (
+                    self._i
+                    and self._i
+                    % self._configuration.training_loop.checkpoint_persist_modulus
+                    == 0
+                ) or should_stop:
+                    start_save = time.time()
+                    self._persist_checkpoint()
+                    (validation_batch, validation_target) = extensions.get_batch(
+                        tokenized_validation_data,
+                        batch_size=self._configuration.training_loop.batch_size,
+                        context_length=self._configuration.training_loop.context_length,
+                        device=self._configuration.training_loop.transformer_llm.device,
+                    )
+                    with torch.no_grad():
+                        validation_loss = cross_entropy_loss(
+                            self._model(validation_batch.to(torch.int64)),
+                            target=validation_target.to(torch.int64).to(
+                                device=self._configuration.training_loop.transformer_llm.device,
+                            ),
+                        )
+                    log_args |= {
+                        "health/checkpoint_save_time": time.time() - start_save,
+                        "metrics/loss/validation": validation_loss.item(),
+                    }
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                self._i += 1
+                if recorder is not None:
+                    log_args |= recorder.logs
+                    log_args |= extensions.record_weight_gradients(
+                        self._model, gradient_histogram_recorder
+                    )
+                    log_args |= extensions.record_weights(
+                        self._model, weight_histogram_recorder
+                    )
+                    gc.collect()
+                    # torch.cuda.empty_cache()
+                wandb.log(
+                    log_args
+                    | {
+                        "metrics/loss/training": loss.item(),
+                        "metrics/lr0": list(self.get_lrs())[0],
+                        "health/i": self._i,
+                        "health/step_time": time.time() - start,
+                        "health/gradient/clipping": int(clipped_gradients),
+                        "health/gradient/value": total_gradient_value,
+                    }
                 )
-                pending_activation_recording.remove_all()
-                gc.collect()
-                # torch.cuda.empty_cache()
-            wandb.log(log_args | {
-                "metrics/loss/training": loss.item(),
-                "metrics/lr0": list(self.get_lrs())[0],
-                "health/i": self._i,
-                "health/step_time": time.time() - start,
-                "health/gradient/clipping": int(clipped_gradients),
-                "health/gradient/value": total_gradient_value,
-            })
-            if should_stop:
-                logging.info(
-                    f"Training ended: max_iterations={self._configuration.training_loop.max_iterations}, time_limit={self._configuration.training_loop.time_limit_in_seconds}"
-                )
-                break
+                if should_stop:
+                    logging.info(
+                        f"Training ended: max_iterations={self._configuration.training_loop.max_iterations}, time_limit={self._configuration.training_loop.time_limit_in_seconds}"
+                    )
+                    break
 
     def train(self):
         if self.should_stop():

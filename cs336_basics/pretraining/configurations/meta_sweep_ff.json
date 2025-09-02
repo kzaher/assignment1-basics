@@ -3,9 +3,17 @@
         {
             "path": "training_loop.transformer_llm.experiments.ff_type",
             "string_values": [
-                "mixture",
+                "conjunction",
+                null
+            ]
+        },
+        {
+            "path": "training_loop.transformer_llm.experiments.rms_norm",
+            "string_values": [
+                "guard_attention",
                 null
             ]
         }
+            
     ]
 }
