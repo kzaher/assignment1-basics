@@ -17,6 +17,15 @@ from contextlib import contextmanager
 T = TypeVar("T")
 
 
+def compose(*args: typing.Callable[[T], T]) -> typing.Callable[[T], T]:
+    def pipeline(x: T):
+        for transform in args:
+            x = transform(x)
+        return x
+
+    return pipeline
+
+
 def cosine_learning_rate(
     it: int,
     zero_iters: int,
@@ -207,23 +216,28 @@ class PendingModuleActivationRecording:
 
     @property
     def logs(self) -> dict[str, wandb.Histogram]:
-        return {
-            k: v
-            for activation in self._input_activations.values()
-            for k, v in activation.logs("activation/input").items()
-        } | {
-            k: v
-            for activation in self._output_activations.values()
-            for k, v in activation.logs("activation/output").items()
-        } | {
-            k:v
-            for activation in self._input_gradient_activations.values()
-            for k, v in activation.logs("gradient/input").items()
-        } | {
-            k:v
-            for activation in self._output_gradient_activations.values()
-            for k, v in activation.logs("gradient/output").items()
-        }
+        return (
+            {
+                k: v
+                for activation in self._input_activations.values()
+                for k, v in activation.logs("activation/input").items()
+            }
+            | {
+                k: v
+                for activation in self._output_activations.values()
+                for k, v in activation.logs("activation/output").items()
+            }
+            | {
+                k: v
+                for activation in self._input_gradient_activations.values()
+                for k, v in activation.logs("gradient/input").items()
+            }
+            | {
+                k: v
+                for activation in self._output_gradient_activations.values()
+                for k, v in activation.logs("gradient/output").items()
+            }
+        )
 
     def remove_all(self):
         for hook in self._hooks:
@@ -243,21 +257,23 @@ class ModuleActivationRecorder:
         self._output_gradient_recorder = HistogramRecorder()
 
     @classmethod
-    def _record_activation(cls, name: str, x: torch.Tensor, activations: dict[str, torch.Tensor], activation_recorder: HistogramRecorder):
-      x = x if isinstance(x, torch.Tensor) else (x[0] if len(x) > 0 else None)
-      if x is not None and x.dtype in SUPPORTED_HISTOGRAM_TYPES:
-          activations[name] = (
-              activation_recorder.calculate_histogram(
-                  name=name, x=x
-              )
-          )
+    def _record_activation(
+        cls,
+        name: str,
+        x: torch.Tensor,
+        activations: dict[str, torch.Tensor],
+        activation_recorder: HistogramRecorder,
+    ):
+        x = x if isinstance(x, torch.Tensor) else (x[0] if len(x) > 0 else None)
+        if x is not None and x.dtype in SUPPORTED_HISTOGRAM_TYPES:
+            activations[name] = activation_recorder.calculate_histogram(name=name, x=x)
 
     @contextmanager
     def intercept_activations(self, intercept=True):
         if not intercept:
             yield None
             return
-        
+
         input_activations = {}
         output_activations = {}
         input_gradient_activations = {}
@@ -271,14 +287,23 @@ class ModuleActivationRecorder:
             def register_activation(
                 module: nn.Module, i: torch.Tensor, o: torch.Tensor, name=name
             ):
-                ModuleActivationRecorder._record_activation(name, i, input_activations, self._input_activation_recorder)
-                ModuleActivationRecorder._record_activation(name, o, output_activations, self._output_activation_recorder)
+                ModuleActivationRecorder._record_activation(
+                    name, i, input_activations, self._input_activation_recorder
+                )
+                ModuleActivationRecorder._record_activation(
+                    name, o, output_activations, self._output_activation_recorder
+                )
 
             @torch._dynamo.disable
-            def gradient_activation(module: nn.Module, i: torch.Tensor, o: torch.Tensor, name=name):
-                ModuleActivationRecorder._record_activation(name, i, input_gradient_activations, self._input_gradient_recorder)
-                ModuleActivationRecorder._record_activation(name, o, output_gradient_activations, self._output_gradient_recorder)
-
+            def gradient_activation(
+                module: nn.Module, i: torch.Tensor, o: torch.Tensor, name=name
+            ):
+                ModuleActivationRecorder._record_activation(
+                    name, i, input_gradient_activations, self._input_gradient_recorder
+                )
+                ModuleActivationRecorder._record_activation(
+                    name, o, output_gradient_activations, self._output_gradient_recorder
+                )
 
             hooks.append(module.register_forward_hook(register_activation))
             hooks.append(module.register_full_backward_hook(gradient_activation))
@@ -311,7 +336,23 @@ def record_weight_gradients(
         args |= histogram_recorder.calculate_histogram(name=name, x=param.grad).logs(
             "gradient"
         )
+        abs_param = param.abs()
+        args |= histogram_recorder.calculate_histogram(
+            name=name,
+            x=torch.log(
+                param.grad.abs()
+                / torch.where(
+                    abs_param
+                    == torch.tensor(0, dtype=abs_param.dtype, device=abs_param.device),
+                    torch.ones_like(
+                        abs_param, dtype=abs_param.dtype, device=abs_param.device
+                    ),
+                    abs_param,
+                )
+            ),
+        ).logs("gradient_ratio")
     return args
+
 
 @torch.no_grad()
 @torch._dynamo.disable
@@ -322,7 +363,5 @@ def record_weights(
     for name, param in model.named_parameters():
         if param.dtype not in SUPPORTED_HISTOGRAM_TYPES:
             continue
-        args |= weight_recorder.calculate_histogram(name=name, x=param).logs(
-            "weight"
-        )
+        args |= weight_recorder.calculate_histogram(name=name, x=param).logs("weight")
     return args

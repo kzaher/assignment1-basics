@@ -1,19 +1,16 @@
-export POD_ID=vi855obf5a5lx2
-read RP_IP RP_SSH_PORT < <(
-  curl -sS -H "Authorization: Bearer $RUNPOD_API_KEY" \
-    "https://rest.runpod.io/v1/pods/$POD_ID" \
-  | jq -r '[.publicIp, .portMappings["22"]] | @tsv'
-)
+. /workspace/scripts/runpod_environment.sh
 
-echo "IP:   $RP_IP"
-echo "Port: $RP_SSH_PORT"
 
-rsync -avhL --progress \
+rsync -avhLz --progress --no-owner --no-group \
   --exclude '.git/' \
   --exclude 'experiments/' \
   --exclude '.devcontainer/.uv-cache/' \
   --exclude '.devcontainer/.venv/' \
   --exclude '.venv/' \
   --exclude 'wandb/' \
+  --include 'data/' \
+  --include 'data/owt_train.txt.tokens.vocab_size=32000.npy' \
+  --include 'data/owt_valid.txt.tokens.vocab_size=32000.npy' \
+  --exclude 'data/*' \
   -e "ssh -p $RP_SSH_PORT" \
   . root@"$RP_IP":/workspace

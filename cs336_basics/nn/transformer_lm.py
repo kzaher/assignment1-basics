@@ -4,6 +4,7 @@ from cs336_basics.nn import rms_norm
 from cs336_basics.nn import embedding
 from cs336_basics.nn import linear
 from cs336_basics.nn import softmax
+from cs336_basics.nn import atan
 from cs336_basics.pretraining import configuration
 import torch
 from jaxtyping import Float, Int
@@ -26,6 +27,7 @@ class TransformerLm(nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
+        self.experiments = experiments
         self.token_embeddings = embedding.Embedding(
             num_embeddings=vocab_size, embedding_dim=d_model, device=device, dtype=dtype
         )
@@ -40,14 +42,32 @@ class TransformerLm(nn.Module):
                     use_bias=use_bias,
                     experiments=experiments,
                     device=device,
-                    dtype=dtype
+                    dtype=dtype,
                 )
                 for _ in range(num_layers)
             ]
         )
-        self.ln_final = rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
+        if (
+            self.experiments.rms_norm is None
+            or self.experiments.rms_norm == "post"
+            or self.experiments.rms_norm == "dyt"
+            or self.experiments.rms_norm == "dyt_full"
+            or self.experiments.rms_norm == "pre"
+            or self.experiments.rms_norm == "guard_attention"
+        ):
+            self.ln_final = rms_norm.RmsNorm(
+                d_model=d_model, device=device, dtype=dtype
+            )
+        elif self.experiments.rms_norm == "remove":
+            self.ln_final = atan.AtanTernary(dtype=dtype, device=device)
+        else:
+            raise Exception("Final layer")
         self.lm_head = linear.Linear(
-            in_features=d_model, out_features=vocab_size, use_bias=use_bias, device=device, dtype=dtype
+            in_features=d_model,
+            out_features=vocab_size,
+            use_bias=use_bias,
+            device=device,
+            dtype=dtype,
         )
 
     def forward(

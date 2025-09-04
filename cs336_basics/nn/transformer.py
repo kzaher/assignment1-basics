@@ -9,7 +9,8 @@ import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 from cs336_basics.pretraining import configuration
-from cs336_basics.nn import sigmoid
+from cs336_basics.nn import atan
+from cs336_basics.nn import extensions
 
 
 class TransformerBlock(nn.Module):
@@ -51,16 +52,7 @@ class TransformerBlock(nn.Module):
             if d_alpha is not None
             else None
         )
-        self.guard_sigmoid1 = sigmoid.SigmoidCustomGrad(
-            mu=0,
-            s=0.5,
-            # Prevent gradient exploding
-            max_grad=0.01,
-        )
-        self.guard_sigmoid2 = sigmoid.SigmoidCustomGrad(
-            mu=0,
-            s=0.5,
-        )
+        self.guard1 = atan.Atan(max_grad=experiments.input_gradient_guard, dtype=dtype, device=device)
         if experiments.ff_type is None:
             self.ffn = nonlinear.SwiGlu(
                 d_model=d_model,
@@ -100,6 +92,7 @@ class TransformerBlock(nn.Module):
                 d_model=d_model,
                 use_bias=use_bias,
                 d_ff=d_ff,
+                experiments=experiments,
                 and_group_size=experiments.and_group_size,
                 device=device,
                 dtype=dtype,
@@ -172,18 +165,17 @@ class TransformerBlock(nn.Module):
             return attention_output + self.ffn(attention_output)
         elif self.experiments.rms_norm == "guard_attention":
             attention_output: Float[Tensor, "... sequence_length d_model"] = x + (
-                2
-                * self.guard_sigmoid2(
-                    self.attn(
-                        2 * self.guard_sigmoid1(x) - 1,
+                extensions.compose(
+                    self.guard1,
+                    lambda x: self.attn(
+                        x,
                         token_positions=(
-                            torch.arange(x.size(-2))
+                            torch.arange(x.size(-2), device=x.device)
                             if token_positions is None
                             else token_positions
                         ),
                     )
-                )
-                - 1
+                )(x)
             )
             return attention_output + self.ffn(attention_output)
         else:

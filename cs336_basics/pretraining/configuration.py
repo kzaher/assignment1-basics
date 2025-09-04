@@ -29,6 +29,8 @@ class ArchitectureExperiments:
     enabled_nonlinear: list[str] | None = None
     activation: str | None = None
     and_group_size: int | None = None
+    input_gradient_guard: float | None = None
+    output_gradient_guard: float | None = None
 
 @dataclasses.dataclass(frozen=True)
 class TransformerLlmConfiguration:

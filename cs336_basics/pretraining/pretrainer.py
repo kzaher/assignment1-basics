@@ -49,7 +49,12 @@ class Pretrainer:
             experiments=lm_configuration.experiments,
         )
         model.register_buffer("start_time", torch.tensor(time.time()))
-        self._model = torch.compile(model)
+        
+        # Keep uncompiled model for validation to avoid cache invalidation
+        self._uncompiled_model = model
+        
+        # Compile the model with optimizations for training
+        self._model = torch.compile(model, mode="default")
         optimizer_configuration = (
             configuration.training_loop.adamw_optimizer_configuration
         )
@@ -361,7 +366,7 @@ class Pretrainer:
                     )
                     with torch.no_grad():
                         validation_loss = cross_entropy_loss(
-                            self._model(validation_batch.to(torch.int64)),
+                            self._uncompiled_model(validation_batch.to(torch.int64)),
                             target=validation_target.to(torch.int64).to(
                                 device=self._configuration.training_loop.transformer_llm.device,
                             ),
@@ -433,6 +438,14 @@ class Pretrainer:
             **wandb_kw_args,
         ) as run:
             self._run_id = run.id
+            
+            # Print clean, unescaped URLs for better readability
+            project_name = self._configuration.training_loop.name
+            run_id = run.id
+            logger.info(f"🚀 Clean W&B URLs:")
+            logger.info(f"   Project: https://wandb.ai/ante-materija-gmbh/{project_name}")
+            logger.info(f"   Run: https://wandb.ai/ante-materija-gmbh/{project_name}/runs/{run_id}")
+            
             self._run_training_loop(
                 tokenized_training_data=tokenized_training_data,
                 tokenized_validation_data=tokenized_validation_data,

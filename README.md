@@ -67,3 +67,8 @@ NextIdeas
 
 * Try to get non linear gradient
 * Uncorrelated signals in a layer
+
+Blackwell - install torch
+```
+uv pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu129
+```

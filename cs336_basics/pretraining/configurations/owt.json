@@ -16,7 +16,7 @@
         "vocab_size": 32000,
         "max_sequence_length": 2048,
         "d_model": 768,
-        "num_layers": 12,
+        "num_layers": 1,
         "num_heads": 12,
         "d_ff": 6400,
         "rope_theta": 10000,
@@ -24,20 +24,22 @@
         "dtype": "bfloat16",
         "use_bias": false,
         "experiments": {
-            "and_group_size": 8
+            "and_group_size": 8,
+            "input_gradient_guard": 50,
+            "output_gradient_guard": 50
         }
     },
     "annealing_configuration": {
         "zero_iters": 0,
         "warmup_iters": 500,
         "use_cosine_rampup": false,
-        "max_learning_rate": 0.001,
-        "min_learning_rate": 0.0001,
+        "max_learning_rate": 0.00025,
+        "min_learning_rate": 0.00001,
         "cosine_cycle_iters": 10000
     },
     "context_length": 512,
     "batch_size": 24,
-    "initial_max_l2_norm": 70,
-    "max_iterations": 6000,
+    "initial_max_l2_norm": 200000000,
+    "max_iterations": 10000,
     "time_limit_in_seconds": 3600
 }

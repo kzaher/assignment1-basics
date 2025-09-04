@@ -37,7 +37,7 @@ class Rope(nn.Module):
                 ),
             ],
             dim=-2,
-        )
+        ).to(device=device)
         self.register_buffer("rs", rs, persistent=False)
 
     def forward(
