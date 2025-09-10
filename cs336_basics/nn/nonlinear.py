@@ -7,6 +7,9 @@ from torch import nn
 from torch.autograd import Function
 import torch.nn.functional as F
 
+class Swish(nn.Module):
+    def forward(self, x):
+        return x * torch.sigmoid(x)
 
 class SwiGlu(nn.Module):
     def __init__(
@@ -39,13 +42,13 @@ class SwiGlu(nn.Module):
             device=device,
             dtype=dtype,
         )
+        self.swish = Swish()
 
     def forward(
         self, x: Float[torch.Tensor, "... d_model"]
     ) -> Float[torch.Tensor, "... d_model"]:
-        w1x = self.w1(x)
         return self.w2(
-            w1x * torch.sigmoid(w1x) * self.w3(x),
+            self.swish(self.w1(x)) * self.w3(x),
         )
 
 

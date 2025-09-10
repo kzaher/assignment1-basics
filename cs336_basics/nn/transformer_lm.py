@@ -47,21 +47,9 @@ class TransformerLm(nn.Module):
                 for _ in range(num_layers)
             ]
         )
-        if (
-            self.experiments.rms_norm is None
-            or self.experiments.rms_norm == "post"
-            or self.experiments.rms_norm == "dyt"
-            or self.experiments.rms_norm == "dyt_full"
-            or self.experiments.rms_norm == "pre"
-            or self.experiments.rms_norm == "guard_attention"
-        ):
-            self.ln_final = rms_norm.RmsNorm(
-                d_model=d_model, device=device, dtype=dtype
-            )
-        elif self.experiments.rms_norm == "remove":
-            self.ln_final = atan.AtanTernary(dtype=dtype, device=device)
-        else:
-            raise Exception("Final layer")
+        self.ln_final = experiments.create_final_normalization_layer(
+            d_model=d_model, device=device, dtype=dtype
+        )
         self.lm_head = linear.Linear(
             in_features=d_model,
             out_features=vocab_size,

@@ -1,6 +1,16 @@
 import dataclasses
 from cs336_basics import serialization
 
+from cs336_basics.nn import nonlinear
+from cs336_basics.nn import nonlinear_conjunction
+from cs336_basics.nn import nonlinear_mixture
+from cs336_basics.nn import rms_norm
+from cs336_basics.nn import dyt
+from cs336_basics.nn import atan
+from cs336_basics.nn import parabola
+
+import torch
+
 
 @dataclasses.dataclass(frozen=True)
 class AdamWOptimizerConfiguration:
@@ -26,11 +36,81 @@ class ArchitectureExperiments:
     ff_type: str | None = None
     ff_relu_squeeze_factor: float | None = None
     ff_relu_min: float | None = None
-    enabled_nonlinear: list[str] | None = None
     activation: str | None = None
-    and_group_size: int | None = None
     input_gradient_guard: float | None = None
     output_gradient_guard: float | None = None
+
+    def create_final_normalization_layer(self, d_model: int, device: str, dtype: torch.dtype | None):
+        return self.create_default_normalization_layer(d_model=d_model, device=device, dtype=dtype)
+
+    def create_default_normalization_layer(self, d_model: int, device: str, dtype: torch.dtype | None):
+        match self.rms_norm:
+            case None:
+                return rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
+            case 'dyt' | 'dyt_full':
+                d_alpha = {"dyt": 1, "dyt_full": d_model}.get(self.rms_norm, None)
+                assert d_alpha
+                return dyt.DyT(d_model=d_model, d_alpha=d_alpha, device=device, dtype=dtype)
+            case 'atan_learnable':
+                return atan.Atan(d_model=d_model, device=device, dtype=dtype, learnable_weight=True)
+            case 'atan':
+                return atan.Atan(d_model=d_model, device=device, dtype=dtype, learnable_weight=False)
+            case _:
+                raise Exception(f'Unknown rms_norm: {self.rms_norm}')
+
+    def create_ffn(self, d_model: int, device: str, dtype: torch.dtype | None, d_ff: int, use_bias: bool):
+        match self.ff_type:
+            case None:
+                return nonlinear.SwiGlu(
+                    d_model=d_model,
+                    d_ff=d_ff,
+                    use_bias=use_bias,
+                    device=device,
+                    dtype=dtype,
+                )
+            case "silu":
+                return nonlinear.SiLU()
+            case "relu_soft":
+                assert self.ff_relu_squeeze_factor
+                assert self.ff_relu_min
+                return nonlinear.ReluSoft(
+                    d_model=d_model,
+                    d_ff=d_ff,
+                    squeeze_factor=self.ff_relu_squeeze_factor,
+                    min_gradient=self.ff_relu_min,
+                    use_bias=use_bias,
+                    device=device,
+                    dtype=dtype,
+                )
+            case "parabola":
+                return parabola.ParabolaGlu(
+                    d_model=d_model,
+                    use_bias=use_bias,
+                    d_ff=d_ff,
+                    device=device,
+                    dtype=dtype,
+                )
+            case "parabola_raised":
+                return parabola.ParabolaGlu(
+                    d_model=d_model,
+                    use_bias=use_bias,
+                    d_ff=d_ff,
+                    device=device,
+                    dtype=dtype,
+                    y_offset=1.0
+                )
+            case "parabola_lowered":
+                return parabola.ParabolaGlu(
+                    d_model=d_model,
+                    use_bias=use_bias,
+                    d_ff=d_ff,
+                    device=device,
+                    dtype=dtype,
+                    y_offset=-1.0
+                )
+            case _:
+                raise Exception(f"ff_type is unknown: {self.ff_type}")
+
 
 @dataclasses.dataclass(frozen=True)
 class TransformerLlmConfiguration:
@@ -45,6 +125,7 @@ class TransformerLlmConfiguration:
     dtype: str
     use_bias: bool
     experiments: ArchitectureExperiments
+
 
 @dataclasses.dataclass(frozen=True)
 class LlmPretrainingTrainingLoopConfiguration:
@@ -64,6 +145,7 @@ class LlmPretrainingTrainingLoopConfiguration:
     @classmethod
     def from_dict(cls, object: dict) -> "LlmPretrainingTrainingLoopConfiguration":
         return serialization.from_dict(cls, object)
+    
 
 
 @dataclasses.dataclass(frozen=True)

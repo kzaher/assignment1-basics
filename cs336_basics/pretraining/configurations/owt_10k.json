@@ -1,7 +1,7 @@
 {
-    "name": "owt_init",
-    "training_data_path": "data/owt_train.txt",
-    "validation_data_path": "data/owt_valid.txt",
+    "name": "owt_10k",
+    "training_data_path": "data/owt_train_10k.txt",
+    "validation_data_path": "data/owt_train_10k.txt",
     "checkpoint_persist_modulus": 500,
     "adamw_optimizer_configuration": {
         "lr": 0.001,
@@ -13,12 +13,12 @@
         "eps": 1e-8
     },
     "transformer_llm": {
-        "vocab_size": 32000,
-        "max_sequence_length": 2048,
-        "d_model": 768,
-        "num_layers": 12,
-        "num_heads": 12,
-        "d_ff": 6400,
+        "vocab_size": 257,
+        "max_sequence_length": 512,
+        "d_model": 80,
+        "num_layers": 1,
+        "num_heads": 8,
+        "d_ff": 10000,
         "rope_theta": 10000,
         "device": "cuda",
         "dtype": "bfloat16",
@@ -31,15 +31,15 @@
     },
     "annealing_configuration": {
         "zero_iters": 0,
-        "warmup_iters": 1000,
+        "warmup_iters": 500,
         "use_cosine_rampup": false,
         "max_learning_rate": 0.0005,
         "min_learning_rate": 0.0001,
-        "cosine_cycle_iters": 20000
+        "cosine_cycle_iters": 6000
     },
     "context_length": 512,
     "batch_size": 24,
     "initial_max_l2_norm": 200000000,
-    "max_iterations": 20000,
+    "max_iterations": 3000,
     "time_limit_in_seconds": 3600
 }

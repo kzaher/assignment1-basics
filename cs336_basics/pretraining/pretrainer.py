@@ -381,10 +381,10 @@ class Pretrainer:
                 if recorder is not None:
                     log_args |= recorder.logs
                     log_args |= extensions.record_weight_gradients(
-                        self._model, gradient_histogram_recorder
+                        self._uncompiled_model, gradient_histogram_recorder
                     )
                     log_args |= extensions.record_weights(
-                        self._model, weight_histogram_recorder
+                        self._uncompiled_model, weight_histogram_recorder
                     )
                     gc.collect()
                     # torch.cuda.empty_cache()

@@ -3,7 +3,6 @@ from torch import nn
 from cs336_basics.nn import linear
 from cs336_basics.nn import atan
 from cs336_basics.nn import extensions
-from cs336_basics.pretraining import configuration
 from jaxtyping import Float
 import einops
 import functools
@@ -15,8 +14,7 @@ class ConjunctionFeedForward(nn.Module):
         d_model: int,
         d_ff: int,
         use_bias: bool,
-        and_group_size: int,
-        experiments: configuration.ArchitectureExperiments,
+        max_gradient_guard: float = 30.0,
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
     ):
@@ -39,9 +37,7 @@ class ConjunctionFeedForward(nn.Module):
         self.and_or_ternary1 = atan.AtanTernary(dtype=dtype, device=device)
         # self.and_or_ternary2 = atan.AtanTernary(max_grad=experiments.input_gradient_guard, dtype=dtype, device=device)
 
-        self.guard = atan.Atan(max_grad=experiments.output_gradient_guard, dtype=dtype, device=device)
-
-        self.and_group_size = and_group_size
+        self.guard = atan.Atan(d_model=d_model, max_grad=max_gradient_guard, dtype=dtype, device=device)
 
     def forward(
         self, x: Float[torch.Tensor, "... d_model"]

@@ -60,6 +60,7 @@ class _AtanGradBoost(Function):
 class Atan(nn.Module):
     def __init__(
         self,
+        d_model: int,
         grad_boost=1.0,
         max_grad: float | None = None,
         horizontal_scale=1.0,
@@ -67,7 +68,6 @@ class Atan(nn.Module):
         dtype: torch.dtype | None = None,
         learnable_horizontal_scale=False,
         learnable_weight=True,
-        d_model: int = 768,
     ):
         super().__init__()
         self.grad_boost = grad_boost
@@ -109,11 +109,12 @@ class AtanTernary(nn.Module):
         self,
         grad_boost=1.0,
         max_grad: float | None = None,
-        offset=12.0,
-        horizontal_scale=50.0,
+        offset=10.0,
+        horizontal_scale=1.0,
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
         learnable_horizontal_scale=False,
+        learnable_offset=True
     ):
         super().__init__()
         self.grad_boost = grad_boost
@@ -128,6 +129,16 @@ class AtanTernary(nn.Module):
             self.register_buffer(
                 "horizontal_scale",
                 torch.tensor(horizontal_scale, device=device, dtype=dtype),
+            )
+
+        if learnable_offset:
+            self.offset = nn.Parameter(
+                torch.tensor(offset, device=device, dtype=torch.float32)
+            )
+        else:
+            self.register_buffer(
+                "offset",
+                torch.tensor(offset, device=device, dtype=dtype)
             )
 
     def forward(self, x):

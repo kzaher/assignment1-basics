@@ -113,6 +113,9 @@ def main(argv: abc.Sequence[str]):
     while True:
         prompt = input("Input the desired text: ")
         tokenizer: bpe_tokenizer.BpeTokenizer = pretrainer_engine.ensure_tokenizer()
+        if not prompt:
+            logger.error('Empty prompt, please enter something')
+            continue
         input_tokens = torch.tensor(
             [tokenizer.encode(prompt)] * args.sample_count, dtype=torch.int32
         ).to(device=device)

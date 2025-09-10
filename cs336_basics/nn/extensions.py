@@ -162,10 +162,10 @@ class HistogramRecorder:
     @torch.no_grad()
     @torch._dynamo.disable  # <— keep this OUT of the compiled graph
     def calculate_histogram(self, name: str, x: torch.Tensor) -> wandb.Histogram:
-        x = x.detach()
+        x = x.detach().to(torch.float32)
 
         mean = x.mean().cpu().item()
-        std = x.std().cpu().item()
+        std = x.std().cpu().item() if x.numel() > 1 else 0
 
         max_limit = max(abs(mean + 3 * std), abs(mean - 3 * std), 1e-11)
 
@@ -180,7 +180,7 @@ class HistogramRecorder:
             histogram=wandb.Histogram(
                 np_histogram=(
                     torch.histc(
-                        x.to(torch.float32),
+                        x,
                         min=self._min,
                         max=self._max,
                         bins=self._resolution,
@@ -336,19 +336,12 @@ def record_weight_gradients(
         args |= histogram_recorder.calculate_histogram(name=name, x=param.grad).logs(
             "gradient"
         )
-        abs_param = param.abs()
+        abs_param = torch.max(param.abs(), torch.tensor(1e-8, dtype=param.dtype, device=param.device))
         args |= histogram_recorder.calculate_histogram(
             name=name,
             x=torch.log(
-                param.grad.abs()
-                / torch.where(
-                    abs_param
-                    == torch.tensor(0, dtype=abs_param.dtype, device=abs_param.device),
-                    torch.ones_like(
-                        abs_param, dtype=abs_param.dtype, device=abs_param.device
-                    ),
-                    abs_param,
-                )
+                torch.min(param.grad.abs(), abs_param * 100)
+                / abs_param
             ),
         ).logs("gradient_ratio")
     return args

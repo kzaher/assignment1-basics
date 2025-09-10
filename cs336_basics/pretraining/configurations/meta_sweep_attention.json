@@ -24,7 +24,7 @@
         },
         {
             "path": "training_loop.transformer_llm.d_ff",
-             "string_values": [
+             "int_values": [
                 12800,
                 12800,
                 12800,
@@ -34,25 +34,25 @@
             ]
         },
         {
-            "path": "training_loop.context_length",
-             "string_values": [
-                512,
-                256,
-                128,
-                64,
-                32,
-                16
+            "path": "training_loop.transformer_llm.d_model",
+             "int_values": [
+                2048,
+                2048,
+                2048,
+                1536,
+                1024,
+                768
             ]
         },
         {
-            "path": "training_loop.batch_size",
-             "string_values": [
+            "path": "training_loop.transformer_llm.num_heads",
+             "int_values": [
                 32,
-                64,
-                128,
-                256,
-                512,
-                1024
+                16,
+                8,
+                24,
+                16,
+                12
             ]
         }
     ]
