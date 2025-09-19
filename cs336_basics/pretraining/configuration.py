@@ -8,6 +8,8 @@ from cs336_basics.nn import rms_norm
 from cs336_basics.nn import dyt
 from cs336_basics.nn import atan
 from cs336_basics.nn import parabola
+from cs336_basics.nn import silu_monotonic
+from cs336_basics import extensions
 
 import torch
 
@@ -29,6 +31,7 @@ class AnnealingConfiguration:
     min_learning_rate: float
     cosine_cycle_iters: int
 
+
 @dataclasses.dataclass(frozen=True)
 class ArchitectureExperiments:
     use_nope: bool | None = None
@@ -40,33 +43,53 @@ class ArchitectureExperiments:
     input_gradient_guard: float | None = None
     output_gradient_guard: float | None = None
 
-    def create_final_normalization_layer(self, d_model: int, device: str, dtype: torch.dtype | None):
-        return self.create_default_normalization_layer(d_model=d_model, device=device, dtype=dtype)
+    def create_final_normalization_layer(
+        self, d_model: int, device: str, dtype: torch.dtype | None
+    ):
+        return self.create_default_normalization_layer(
+            d_model=d_model, device=device, dtype=dtype
+        )
 
-    def create_default_normalization_layer(self, d_model: int, device: str, dtype: torch.dtype | None):
+    def create_default_normalization_layer(
+        self, d_model: int, device: str, dtype: torch.dtype | None
+    ):
         match self.rms_norm:
             case None:
                 return rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
-            case 'dyt' | 'dyt_full':
+            case "dyt" | "dyt_full":
                 d_alpha = {"dyt": 1, "dyt_full": d_model}.get(self.rms_norm, None)
                 assert d_alpha
-                return dyt.DyT(d_model=d_model, d_alpha=d_alpha, device=device, dtype=dtype)
-            case 'atan_learnable':
-                return atan.Atan(d_model=d_model, device=device, dtype=dtype, learnable_weight=True)
-            case 'atan':
-                return atan.Atan(d_model=d_model, device=device, dtype=dtype, learnable_weight=False)
+                return dyt.DyT(
+                    d_model=d_model, d_alpha=d_alpha, device=device, dtype=dtype
+                )
+            case "atan_learnable":
+                return atan.Atan(
+                    d_model=d_model, device=device, dtype=dtype, learnable_weight=True
+                )
+            case "atan":
+                return atan.Atan(
+                    d_model=d_model, device=device, dtype=dtype, learnable_weight=False
+                )
             case _:
-                raise Exception(f'Unknown rms_norm: {self.rms_norm}')
+                raise Exception(f"Unknown rms_norm: {self.rms_norm}")
 
-    def create_ffn(self, d_model: int, device: str, dtype: torch.dtype | None, d_ff: int, use_bias: bool):
+    def create_ffn(
+        self,
+        d_model: int,
+        device: str,
+        dtype: torch.dtype | None,
+        d_hidden: int,
+        use_bias: bool,
+    ):
         match self.ff_type:
             case None:
-                return nonlinear.SwiGlu(
+                return nonlinear.ActivatedLu(
                     d_model=d_model,
-                    d_ff=d_ff,
+                    d_ff=d_hidden,
                     use_bias=use_bias,
                     device=device,
                     dtype=dtype,
+                    activation=nonlinear.Swish(),
                 )
             case "silu":
                 return nonlinear.SiLU()
@@ -75,7 +98,7 @@ class ArchitectureExperiments:
                 assert self.ff_relu_min
                 return nonlinear.ReluSoft(
                     d_model=d_model,
-                    d_ff=d_ff,
+                    d_ff=d_hidden,
                     squeeze_factor=self.ff_relu_squeeze_factor,
                     min_gradient=self.ff_relu_min,
                     use_bias=use_bias,
@@ -86,7 +109,7 @@ class ArchitectureExperiments:
                 return parabola.ParabolaGlu(
                     d_model=d_model,
                     use_bias=use_bias,
-                    d_ff=d_ff,
+                    d_ff=d_hidden,
                     device=device,
                     dtype=dtype,
                 )
@@ -94,19 +117,46 @@ class ArchitectureExperiments:
                 return parabola.ParabolaGlu(
                     d_model=d_model,
                     use_bias=use_bias,
-                    d_ff=d_ff,
+                    d_ff=d_hidden,
                     device=device,
                     dtype=dtype,
-                    y_offset=1.0
+                    y_offset=1.0,
                 )
             case "parabola_lowered":
                 return parabola.ParabolaGlu(
                     d_model=d_model,
                     use_bias=use_bias,
-                    d_ff=d_ff,
+                    d_ff=d_hidden,
                     device=device,
                     dtype=dtype,
-                    y_offset=-1.0
+                    y_offset=-1.0,
+                )
+            case "silu_monotonic_lu":
+                return nonlinear.ActivatedLu(
+                    d_model=d_model,
+                    d_ff=d_hidden,
+                    use_bias=use_bias,
+                    device=device,
+                    dtype=dtype,
+                    activation=silu_monotonic.SiLUELUMonotonic(),
+                )
+            case "silu_relu":
+                return nonlinear.ActivatedLu(
+                    d_model=d_model,
+                    d_ff=d_hidden,
+                    use_bias=use_bias,
+                    device=device,
+                    dtype=dtype,
+                    activation=silu_monotonic.SiLUReluMonotonic(),
+                )
+            case "relu":
+                return nonlinear.ActivatedLu(
+                    d_model=d_model,
+                    d_ff=d_hidden,
+                    use_bias=use_bias,
+                    device=device,
+                    dtype=dtype,
+                    activation=torch.nn.ReLU(),
                 )
             case _:
                 raise Exception(f"ff_type is unknown: {self.ff_type}")
@@ -118,13 +168,16 @@ class TransformerLlmConfiguration:
     max_sequence_length: int
     d_model: int
     num_layers: int
-    num_heads: int
-    d_ff: int
+    num_query_heads: int
+    num_key_value_heads: int
+    d_head: int
+    d_hidden: int
     rope_theta: float
     device: str
-    dtype: str
+    dtype_str: str
     use_bias: bool
     experiments: ArchitectureExperiments
+    dtype: torch.dtype | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -144,8 +197,14 @@ class LlmPretrainingTrainingLoopConfiguration:
 
     @classmethod
     def from_dict(cls, object: dict) -> "LlmPretrainingTrainingLoopConfiguration":
-        return serialization.from_dict(cls, object)
-    
+        pretraining_configuration: LlmPretrainingTrainingLoopConfiguration = serialization.from_dict(cls, object)
+        return extensions.replace_recursively(
+            pretraining_configuration,
+            lambda x: x.transformer_llm,
+            transform=lambda transformer_llm: dataclasses.replace(
+                transformer_llm, dtype=getattr(torch, transformer_llm.dtype_str)
+            ),
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -238,11 +297,13 @@ class PretrainingConfiguration:
 
     @classmethod
     def get_output_metadata_path(cls, experiment_output_path: str):
-        return f'{experiment_output_path}/configuration.json'
-    
+        return f"{experiment_output_path}/configuration.json"
+
     @property
     def output_metadata_path(self) -> str:
-        return PretrainingConfiguration.get_output_metadata_path(self.experiment_output_path)
+        return PretrainingConfiguration.get_output_metadata_path(
+            self.experiment_output_path
+        )
 
     @classmethod
     def from_dict(cls, object: dict) -> "PretrainingConfiguration":

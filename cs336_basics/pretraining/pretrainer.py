@@ -23,6 +23,7 @@ import dataclasses
 from numpy.lib.format import open_memmap
 import gc
 import json
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -35,19 +36,7 @@ class Pretrainer:
         self._configuration = configuration
         lm_configuration = configuration.training_loop.transformer_llm
         self._i = 0
-        model = transformer_lm.TransformerLm(
-            vocab_size=lm_configuration.vocab_size,
-            max_sequence_length=lm_configuration.max_sequence_length,
-            d_model=lm_configuration.d_model,
-            num_layers=lm_configuration.num_layers,
-            num_heads=lm_configuration.num_heads,
-            d_ff=lm_configuration.d_ff,
-            rope_theta=lm_configuration.rope_theta,
-            use_bias=lm_configuration.use_bias,
-            device=lm_configuration.device,
-            dtype=getattr(torch, lm_configuration.dtype or "float32"),
-            experiments=lm_configuration.experiments,
-        )
+        model = transformer_lm.TransformerLm(lm_configuration)
         model.register_buffer("start_time", torch.tensor(time.time()))
         
         # Keep uncompiled model for validation to avoid cache invalidation
@@ -409,12 +398,22 @@ class Pretrainer:
         if self.should_stop():
             logger.info("Stop conditions are met.")
             return
+        
+        count_parameters = pd.DataFrame(
+            [
+                {"name": name, "params": np.prod(param.size())}
+                for name, param in self._uncompiled_model.named_parameters()
+            ]
+        )
+        # print(f"# Params\n{count_parameters}")
+        total_params = count_parameters["params"].sum()
+        print(f'# Total params: {total_params:,}')
 
         os.makedirs(self._configuration.output_path, exist_ok=True)
         os.makedirs(self._configuration.checkpoint_dir, exist_ok=True)
 
         with open(self._configuration.output_metadata_path, "wt") as f:
-            json.dump(dataclasses.asdict(self._configuration), f)
+            json.dump(dataclasses.asdict(self._configuration), f, default=lambda x: None)
 
         tokenized_training_data = self.get_tokenized_training_data()
         tokenized_validation_data = self.get_tokenized_validation_data()
@@ -434,7 +433,7 @@ class Pretrainer:
             project=self._configuration.training_loop.name,
             # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
             name=f"{self._configuration.suffix or 'experiment'} {datetime.datetime.fromtimestamp(self._model.start_time.item(), datetime.timezone.utc)} timestamp={self._model.start_time.item()}",
-            config=dataclasses.asdict(self._configuration),
+            config=dataclasses.asdict(self._configuration) | {'total_params': total_params},
             **wandb_kw_args,
         ) as run:
             self._run_id = run.id

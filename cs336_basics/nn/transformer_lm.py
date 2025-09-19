@@ -14,40 +14,25 @@ from torch import Tensor
 class TransformerLm(nn.Module):
     def __init__(
         self,
-        vocab_size: int,
-        max_sequence_length: int,
-        d_model: int,
-        num_layers: int,
-        num_heads: int,
-        d_ff: int,
-        rope_theta: float,
-        use_bias: bool,
-        experiments: configuration.ArchitectureExperiments = configuration.ArchitectureExperiments(),
-        device: torch.types.Device = None,
-        dtype: torch.dtype | None = None,
+        configuration: configuration.TransformerLlmConfiguration,
     ):
         super().__init__()
-        self.experiments = experiments
+        self.experiments = configuration.experiments
+        d_model = configuration.d_model
+        device = configuration.device
+        dtype = configuration.dtype
+        vocab_size = configuration.vocab_size
+        use_bias = configuration.use_bias
         self.token_embeddings = embedding.Embedding(
             num_embeddings=vocab_size, embedding_dim=d_model, device=device, dtype=dtype
         )
         self.layers = nn.ModuleList(
             [
-                transformer.TransformerBlock(
-                    d_model=d_model,
-                    num_heads=num_heads,
-                    d_ff=d_ff,
-                    max_sequence_length=max_sequence_length,
-                    theta=rope_theta,
-                    use_bias=use_bias,
-                    experiments=experiments,
-                    device=device,
-                    dtype=dtype,
-                )
-                for _ in range(num_layers)
+                transformer.TransformerBlock(configuration)
+                for _ in range(configuration.num_layers)
             ]
         )
-        self.ln_final = experiments.create_final_normalization_layer(
+        self.ln_final = configuration.experiments.create_final_normalization_layer(
             d_model=d_model, device=device, dtype=dtype
         )
         self.lm_head = linear.Linear(

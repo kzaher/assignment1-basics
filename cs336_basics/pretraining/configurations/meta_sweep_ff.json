@@ -1,58 +1,12 @@
 {
     "values": [
         {
-            "path": "training_loop.transformer_llm.dtype",
-             "string_values": [
-                "float32",
-                "float32",
-                "float32",
-                "float32",
-                "float32",
-                "float32"
-            ]
-        },
-        {
-            "path": "training_loop.transformer_llm.num_layers",
-             "int_values": [
-                2,
-                2,
-                2,
-                2,
-                2,
-                2
-            ]
-        },
-        {
-            "path": "training_loop.transformer_llm.d_ff",
-             "string_values": [
-                12800,
-                12800,
-                12800,
-                12800,
-                12800,
-                12800
-            ]
-        },
-        {
-            "path": "training_loop.context_length",
-             "string_values": [
-                512,
-                256,
-                128,
-                64,
-                32,
-                16
-            ]
-        },
-        {
-            "path": "training_loop.batch_size",
-             "string_values": [
-                32,
-                64,
-                128,
-                256,
-                512,
-                1024
+            "path": "training_loop.transformer_llm.experiments.ff_type",
+            "string_values": [
+                null,
+                "relu",
+                "silu_monotonic_lu",
+                "silu_relu"
             ]
         }
     ]

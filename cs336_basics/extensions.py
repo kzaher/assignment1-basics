@@ -59,6 +59,9 @@ class Recorder:
 
 
 def replace_recursively(
-    object: _T, select_element: Callable[[_T], _R], final_value: _R
+    object: _T, select_element: Callable[[_T], _R], final_value: _R | None = None, transform: Callable[[_R], _R] | None = None
 ) -> _T:
-    return select_element(Recorder(object))._replace_value(final_value)
+    recorder = select_element(Recorder(object))
+    if transform is not None:
+        final_value = transform(recorder._current_object)
+    return recorder._replace_value(final_value)

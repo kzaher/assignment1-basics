@@ -22,6 +22,7 @@ from cs336_basics.nn import transformer_lm as basic_transformer_lm
 from cs336_basics.nn import cross_entropy as basic_cross_entropy
 from cs336_basics.nn import adam_w as basics_adam_w
 from cs336_basics.nn import extensions
+from cs336_basics.pretraining import configuration
 
 
 def run_linear(
@@ -96,7 +97,7 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    swiglu = basics_nonlinear.SwiGlu(d_model=d_model, use_bias=False, d_ff=d_ff)
+    swiglu = basics_nonlinear.ActivatedLu(d_model=d_model, use_bias=False, d_ff=d_ff, activation=basics_nonlinear.SiLU())
     swiglu.load_state_dict(
         {
             "w1.weight": w1_weight,
@@ -162,16 +163,14 @@ def run_multihead_self_attention(
     """
     mhsa = basic_mhsa.MultiHeadSelfAttention(
         d_model=d_model,
-        num_heads=num_heads,
-        d_key=q_proj_weight.size(-2),
-        d_value=v_proj_weight.size(-2),
+        num_query_heads=num_heads,
+        num_key_value_heads=num_heads,
+        d_head=q_proj_weight.size(-2) // num_heads,
         use_bias=False
     )
     mhsa.load_state_dict(
         {
-            "q_proj.weight": q_proj_weight,
-            "k_proj.weight": k_proj_weight,
-            "v_proj.weight": v_proj_weight,
+            "qkv_proj.weight": torch.concat([q_proj_weight, k_proj_weight, v_proj_weight], dim=-2),
             "output_proj.weight": o_proj_weight,
         }
     )
@@ -217,18 +216,16 @@ def run_multihead_self_attention_with_rope(
     """
     mhsa = basic_mhsa.MultiHeadSelfAttention(
         d_model=d_model,
-        num_heads=num_heads,
-        d_key=q_proj_weight.size(-2),
-        d_value=v_proj_weight.size(-2),
+        num_query_heads=num_heads,
+        num_key_value_heads=num_heads,
+        d_head=q_proj_weight.size(-2) // num_heads,
+        use_bias=False,
         max_sequence_length=max_seq_len,
-        theta=theta,
-        use_bias=False
+        theta=theta
     )
     mhsa.load_state_dict(
         {
-            "q_proj.weight": q_proj_weight,
-            "k_proj.weight": k_proj_weight,
-            "v_proj.weight": v_proj_weight,
+            "qkv_proj.weight": torch.concat([q_proj_weight, k_proj_weight, v_proj_weight], dim=-2),
             "output_proj.weight": o_proj_weight,
         }
     )
@@ -257,6 +254,19 @@ def run_rope(
     rope = basics_rope.Rope(theta=theta, max_seq_len=max_seq_len, d_k=d_k)
     return rope.forward(in_query_or_key, token_positions)
 
+def convert_attention_weights(state_dict: dict[str, torch.Tensor], num_layers: int|None = None):
+    if num_layers:
+        for i in range(num_layers):
+            q = state_dict.pop(f'layers.{i}.attn.q_proj.weight')
+            k = state_dict.pop(f'layers.{i}.attn.k_proj.weight')
+            v = state_dict.pop(f'layers.{i}.attn.v_proj.weight')
+            state_dict = state_dict | {f'layers.{i}.attn.qkv_proj.weight': torch.concat([q, k, v], dim=-2)}
+        return state_dict
+    else:
+        q = state_dict.pop('attn.q_proj.weight')
+        k = state_dict.pop('attn.k_proj.weight')
+        v = state_dict.pop('attn.v_proj.weight')
+        return state_dict | {'attn.qkv_proj.weight': torch.concat([q, k, v], dim=-2)}
 
 def run_transformer_block(
     d_model: int,
@@ -329,14 +339,26 @@ def run_transformer_block(
         running the Transformer block on the input features while using RoPE.
     """
     transformer_block = basic_transformer.TransformerBlock(
-        d_model=d_model,
-        num_heads=num_heads,
-        d_ff=d_ff,
-        max_sequence_length=max_seq_len,
-        theta=theta,
-        use_bias=False
+        configuration=configuration.TransformerLlmConfiguration(
+            d_model=d_model,
+            num_query_heads=num_heads,
+            num_key_value_heads=num_heads,
+            d_head=d_model // num_heads,
+            d_hidden=d_ff,
+            max_sequence_length=max_seq_len,
+            rope_theta=theta,
+            use_bias=False,
+            # irrelevant
+            vocab_size=0,
+            num_layers=0,
+            device='cpu',
+            dtype_str='',
+            dtype=torch.float32,
+            experiments=configuration.ArchitectureExperiments()
+            # , "d_head", "d_hidden", "rope_theta", "device", "dtype", "experiments"
+        )
     )
-    transformer_block.load_state_dict(weights)
+    transformer_block.load_state_dict(convert_attention_weights(weights))
     return transformer_block.forward(in_features)
 
 
@@ -420,16 +442,26 @@ def run_transformer_lm(
         next-word distribution for each token.
     """
     transformer_lm = basic_transformer_lm.TransformerLm(
-        vocab_size=vocab_size,
-        max_sequence_length=context_length,
-        d_model=d_model,
-        num_layers=num_layers,
-        num_heads=num_heads,
-        d_ff=d_ff,
-        rope_theta=rope_theta,
-        use_bias=False
+        configuration=configuration.TransformerLlmConfiguration(
+            d_model=d_model,
+            num_query_heads=num_heads,
+            num_key_value_heads=num_heads,
+            d_head=d_model // num_heads,
+            d_hidden=d_ff,
+            max_sequence_length=context_length,
+            rope_theta=rope_theta,
+            use_bias=False,
+            vocab_size=vocab_size,
+            num_layers=num_layers,
+            dtype_str='',
+            dtype=torch.float32,
+            device='cpu',
+            # irrelevant
+            experiments=configuration.ArchitectureExperiments()
+            # , "d_head", "d_hidden", "rope_theta", "device", "dtype", "experiments"
+        )
     )
-    transformer_lm.load_state_dict(weights)
+    transformer_lm.load_state_dict(convert_attention_weights(weights, num_layers))
     return transformer_lm.forward(in_indices)
 
 

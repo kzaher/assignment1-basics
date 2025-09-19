@@ -252,6 +252,24 @@ class TestReplaceRecursively:
         assert isinstance(result.nested.inner, InnerData)
         assert isinstance(result.nested.inner.value, int)
 
+    def test_transform_function(self):
+        result = replace_recursively(
+            self.nested_data,
+            lambda obj: obj.inner,
+            transform=lambda inner: dataclasses.replace(
+                inner, name=inner.name + "_replaced"
+            ),
+        )
+
+        assert result.inner.value == 42
+        assert result.inner.name == "original_replaced"
+        # Verify original is unchanged
+        assert self.nested_data.inner.value == 42
+        assert self.nested_data.inner.name == "original"
+        # Verify other fields are preserved
+        assert result.numbers == [1, 2, 3]
+        assert result.mapping == {"key1": "value1", "key2": self.inner_data}
+
 
 class TestEdgeCases:
     """Test edge cases and error conditions."""

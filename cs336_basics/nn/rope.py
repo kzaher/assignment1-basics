@@ -55,3 +55,47 @@ class Rope(nn.Module):
             dim=-1,
         )
         return einops.rearrange(stacked, "... d_k2 g->... (d_k2 g)")
+
+
+class RopeComplex(nn.Module):
+    def __init__(
+        self,
+        theta: float,
+        d_k: int,
+        max_seq_len: int,
+        device: torch.types.Device = None,
+        dtype: torch.dtype | None = None,
+    ):
+        super().__init__()
+        assert d_k % 2 == 0
+        d_k2 = d_k // 2
+        self.d_k = d_k
+        self.theta = theta
+        self.dtype = dtype
+        self.complex_safe_type = {torch.bfloat16: torch.float32}.get(self.dtype, self.dtype)
+        indices: Float[torch.Tensor, "max_seq_len"] = torch.arange(
+            max_seq_len, device=device
+        )
+        ks: Float[torch.Tensor, "d_k2"] = torch.pow(
+            theta, torch.arange(d_k2, device=device) / float(d_k2)
+        )
+        thetas: Float[torch.Tensor, "max_seq_len d_k2"] = torch.einsum(
+            "m,k->mk", indices, 1 / ks
+        )
+        rs: Float[torch.Tensor, "max_seq_len d_k"] = torch.polar(
+            torch.ones_like(thetas), thetas
+        ).to(device=device)
+        self.register_buffer("rs", rs, persistent=False)
+
+    def forward(
+        self,
+        x: Float[torch.Tensor, "... seq_len d_k"],
+        token_positions: Int[torch.Tensor, "seq_len"],
+    ) -> Float[torch.Tensor, "... seq_len head d_k"]:
+        x_pairs = torch.view_as_complex(
+            einops.rearrange(x, "... seq_len (d_k g) -> ... seq_len d_k g", g=2).to(self.complex_safe_type)
+        )
+        rs: Float[torch.Tensor, "... seq_len d_k2"] = self.rs[token_positions]
+        return einops.rearrange(
+            torch.view_as_real(x_pairs * rs).to(self.dtype), "... d_k g -> ... (d_k g)"
+        )

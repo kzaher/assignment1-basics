@@ -10,25 +10,24 @@ from cs336_basics.nn import extensions
 class TransformerBlock(nn.Module):
     def __init__(
         self,
-        d_model: int,
-        num_heads: int,
-        d_ff: int,
-        max_sequence_length: int,
-        theta: float,
-        use_bias: bool,
-        experiments: configuration.ArchitectureExperiments = configuration.ArchitectureExperiments(),
-        device: torch.types.Device = None,
-        dtype: torch.dtype | None = None,
+        configuration: configuration.TransformerLlmConfiguration
     ):
         super().__init__()
+
+        d_model=configuration.d_model
+        use_bias=configuration.use_bias
+        experiments=configuration.experiments
+        device=configuration.device
+        dtype=configuration.dtype
+
         self.ln1 = experiments.create_default_normalization_layer(d_model=d_model, device=device, dtype=dtype)
         self.attn = multi_head_self_attention.MultiHeadSelfAttention(
             d_model=d_model,
-            num_heads=num_heads,
-            d_key=d_model,
-            d_value=d_model,
-            max_sequence_length=max_sequence_length,
-            theta=theta,
+            num_query_heads=configuration.num_query_heads,
+            num_key_value_heads=configuration.num_key_value_heads,
+            d_head=configuration.d_head,
+            max_sequence_length=configuration.max_sequence_length,
+            theta=configuration.rope_theta,
             use_bias=use_bias,
             device=device,
             dtype=dtype,
@@ -37,7 +36,7 @@ class TransformerBlock(nn.Module):
         self.ln2 = experiments.create_default_normalization_layer(d_model=d_model, device=device, dtype=dtype)
         self.ffn = experiments.create_ffn(
             d_model=d_model,
-            d_ff=d_ff,
+            d_hidden=configuration.d_hidden,
             use_bias=use_bias,
             device=device,
             dtype=dtype)

@@ -13,10 +13,10 @@ sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretrain
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json ;
 
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json --checkpoint=0;
-sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_10MB.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json --checkpoint=0;
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_10MB.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json --checkpoint=0 ;
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_10k.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 ;
 
-sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_attention.json  --checkpoint=0 
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 
 """
 
 import sys
@@ -83,7 +83,7 @@ def main(argv: abc.Sequence[str]):
         )
     logging.info(
         "main_configuration=%s",
-        json.dumps(dataclasses.asdict(configuration_instance), indent=4),
+        json.dumps(dataclasses.asdict(configuration_instance), indent=4, default=str),
     )
     if meta_parameters_path := args.meta_parameters_path:
         with open(meta_parameters_path, "rt") as f:
@@ -142,7 +142,7 @@ def main(argv: abc.Sequence[str]):
             )
             logging.info(
                 "modified_configuration=%s",
-                json.dumps(dataclasses.asdict(mutated_configuration), indent=4),
+                json.dumps(dataclasses.asdict(mutated_configuration), indent=4, default=str),
             )
             run_configuration(mutated_configuration, dry_run=args.dry_run)
     else:

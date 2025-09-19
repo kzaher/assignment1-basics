@@ -11,12 +11,13 @@ class Swish(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
 
-class SwiGlu(nn.Module):
+class ActivatedLu(nn.Module):
     def __init__(
         self,
         d_model: int,
         d_ff: int,
         use_bias: bool,
+        activation: nn.Module,
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
     ):
@@ -42,13 +43,14 @@ class SwiGlu(nn.Module):
             device=device,
             dtype=dtype,
         )
-        self.swish = Swish()
+        self.activation_name = type(activation).__name__
+        setattr(self, self.activation_name, activation)
 
     def forward(
         self, x: Float[torch.Tensor, "... d_model"]
     ) -> Float[torch.Tensor, "... d_model"]:
         return self.w2(
-            self.swish(self.w1(x)) * self.w3(x),
+            getattr(self, self.activation_name)(self.w1(x)) * self.w3(x),
         )
 
 
