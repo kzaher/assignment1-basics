@@ -8,6 +8,7 @@ function load_runpod_env() {
   if [[ -n "$RP_IP" && -n "$RP_SSH_PORT" && -n "$POD_ID" ]]; then
     # Variables already loaded, just export them to ensure they're available
     export RP_IP RP_SSH_PORT POD_ID
+    echo "Reusing POD_ID=${POD_ID} RP_IP=${RP_IP} RP_SSH_PORT=${RP_SSH_PORT}"
     return 0
   fi
 
@@ -19,7 +20,7 @@ function load_runpod_env() {
     env_vars=$(echo "$all_output" | grep -E "^(RP_IP|RP_SSH_PORT|POD_ID)=")
     eval "$env_vars"
     # Export the variables so they're cached and available to child processes
-    export RP_IP RP_SSH_PORT POD_ID
+    export RP_IP RP_SSH_PORT POD_IDt 
     return 0
   else
     echo "Error: Failed to load runpod environment" >&2
@@ -28,6 +29,17 @@ function load_runpod_env() {
     return 1
   fi
 }
+
+function encode_args() {
+  local encoded
+  printf -v encoded '%q ' "$@"
+  printf '%s' "$encoded" | base64 -w 0
+}
+
+function encode_command() {
+  echo "eval \$(printf \\\\042)\$(base64 -d <<< $(encode_args "$@"))\$(printf \\\\042)"
+}
+
 
 # Generic function for running commands on remote targets
 # Environment variables: RUN_SETUP_CMD, RUN_SSH_CMD, RUN_SHELL_STARTUP, RUN_WORKDIR
@@ -42,27 +54,22 @@ function run_generic() {
   
   if [ $# -eq 0 ]; then
     # No arguments - start interactive shell (set INTERACTIVE flag)
-    local INTERACTIVE="-t"
-    local INTERACTIVE_RAW="t"
     local ssh_cmd=$(eval echo "$RUN_SSH_CMD")
     local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
 
     # No arguments - start interactive shell
     ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc')\""
   else
-    # Execute the provided command (INTERACTIVE is empty)
-    local INTERACTIVE="-t"
-    local INTERACTIVE_RAW="t"
     local ssh_cmd=$(eval echo "$RUN_SSH_CMD")
     local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
-    # echo "cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && $@" | ${ssh_cmd} "${shell_startup}"
-    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc; $@')\""
+
+    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && $(encode_command "$@")\""
   fi
 }
 
 function run_jozo() {
   RUN_SETUP_CMD="" \
-  RUN_SSH_CMD="ssh \${INTERACTIVE} kruno@jozo -i ~/.ssh/id_jozo" \
+  RUN_SSH_CMD="ssh -t kruno@jozo -i ~/.ssh/id_jozo" \
   RUN_SHELL_STARTUP="bash" \
   RUN_WORKDIR="/mnt/${JOZO_WORKDIR}" \
   INIT="true" \
@@ -71,8 +78,8 @@ function run_jozo() {
 
 function run_jozodoc() {
   RUN_SETUP_CMD="" \
-  RUN_SSH_CMD="ssh \${INTERACTIVE} kruno@jozo -i ~/.ssh/id_jozo" \
-  RUN_SHELL_STARTUP="docker exec -i\${INTERACTIVE_RAW} ${JOZODOC_CONTAINER} bash" \
+  RUN_SSH_CMD="ssh -t kruno@jozo -i ~/.ssh/id_jozo" \
+  RUN_SHELL_STARTUP="docker exec -it ${JOZODOC_CONTAINER} bash" \
   RUN_WORKDIR="/workspace" \
   INIT="true" \
   run_generic "$@"
@@ -80,7 +87,7 @@ function run_jozodoc() {
 
 function run_pod() {
   RUN_SETUP_CMD="load_runpod_env" \
-  RUN_SSH_CMD="ssh \${INTERACTIVE} -i ~/.ssh/id_runpod -p \$RP_SSH_PORT root@\$RP_IP" \
+  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod -p \$RP_SSH_PORT root@\$RP_IP" \
   RUN_SHELL_STARTUP="bash" \
   RUN_WORKDIR="${POD_WORKDIR}" \
   INIT="export \$(cat /proc/1/environ | tr '\\000' '\\n' | grep -E '^(JUPYTER_PASSWORD|WANDB_API_KEY|RUNPOD_API_KEY_EXTERNAL|RUNPOD_POD_ID|RUNPOD_GPU_COUNT|RUNPOD_MEM_GB)=' | xargs)" \
@@ -140,7 +147,7 @@ function push() {
   fi
 }
 
-function rd() {
+function pushrun() {
   local target="$1"
   shift
   
