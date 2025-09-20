@@ -1,0 +1,56 @@
+{
+    "name": "CS336 Assignment 1 - Python with UV (CPU)",
+    "dockerComposeFile": [
+        "../docker-compose.yml",
+        "docker-compose.cpu.yml"
+    ],
+    "service": "cs336-dev",
+    "workspaceFolder": "/workspace",
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {},
+        "ghcr.io/devcontainers/features/sshd:1": {
+            "version": "latest",
+            "password": "1234",
+            "user": "vscode"
+        }
+    },
+    "remoteEnv": {
+        "PATH": "/opt/venv/bin:${containerEnv:PATH}"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.debugpy",
+                "ms-toolsai.jupyter",
+                "ms-python.isort",
+                "ms-python.black-formatter"
+            ],
+            "settings": {
+                "python.formatting.provider": "black",
+                "python.defaultInterpreterPath": "/opt/venv/bin/python",
+                "python.terminal.activateEnvironment": false,
+                "python.analysis.typeCheckingMode": "basic",
+                "files.associations": {
+                    "*.lock": "toml"
+                }
+            }
+
+            
+        }
+    },
+    "forwardPorts": [
+        8000,
+        2222,
+        8888
+    ],
+    "portsAttributes": {
+        "2222": {
+            "label": "SSH"
+        }
+    },
+    "postCreateCommand": "mkdir -p ~/.ssh && echo 'ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHHA77PkRJcez6twd9rGJSWPEc0rkIQpI9szhvEFzisGUX4Wr/9d8rA1Nx1J7s5w8kcjGka0B92SaKz8Zx1LOUg= kruno@DESKTOP-REUE8F3' >> ~/.ssh/authorized_keys && echo 'ecdsa-sha2-nistp521 AAAAE2VjZHNhLXNoYTItbmlzdHA1MjEAAAAIbmlzdHA1MjEAAACFBAELEObQwZwNsva9nq9fRvZ5Ke05bthz+S7vFzWpMbswuIm8Y/ZVbhEaePF83za5em28RG+N28Y15DFnW5BmaCiwWAFM0JFMQ9Vpo0ic1Z/LDDC8e26ZJAdIK69Q0r6fbRD1cgKSABFt3H+yO9xZNp1zRwTHPeGmgeB9/+kD1xkYbAqY1Q== kruno@macbook-air.home' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 700 ~/.ssh && sudo service ssh start && sudo mkdir -p /mnt/fastdisk && sudo mount /dev/sdg1 /mnt/fastdisk && cp /mnt/fastdisk/container_ssh_backup/* ~/.ssh/ && echo 'Container setup complete! Virtual environment is at /opt/venv'",
+    "remoteUser": "vscode"
+}

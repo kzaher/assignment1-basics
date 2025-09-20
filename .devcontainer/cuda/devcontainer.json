@@ -1,7 +1,8 @@
 {
-    "name": "CS336 Assignment 1 - Python with UV",
+    "name": "CS336 Assignment 1 - Python with UV (CUDA)",
     "dockerComposeFile": [
-        "docker-compose.yml"
+        "../docker-compose.yml",
+        "docker-compose.cuda.yml"
     ],
     "service": "cs336-dev",
     "workspaceFolder": "/workspace",

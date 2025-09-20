@@ -1,0 +1,47 @@
+{
+    "name": "owt_gemma",
+    "training_data_path": "data/owt_train.txt",
+    "validation_data_path": "data/owt_valid.txt",
+    "checkpoint_persist_modulus": 500,
+    "adamw_optimizer_configuration": {
+        "lr": 0.001,
+        "weight_decay": 0.001,
+        "betas": [
+            0.9,
+            0.999
+        ],
+        "eps": 1e-8
+    },
+    "transformer_llm": {
+        "vocab_size": 32000,
+        "max_sequence_length": 2048,
+        "d_model": 2304,
+        "num_layers": 26,
+        "num_query_heads": 8,
+        "num_key_value_heads": 4,
+        "d_head": 256,
+        "d_hidden": 9216,
+        "rope_theta": 10000,
+        "device": "cuda",
+        "dtype_str": "float32",
+        "use_bias": false,
+        "experiments": {
+            "and_group_size": 8,
+            "input_gradient_guard": 50,
+            "output_gradient_guard": 50
+        }
+    },
+    "annealing_configuration": {
+        "zero_iters": 0,
+        "warmup_iters": 1000,
+        "use_cosine_rampup": false,
+        "max_learning_rate": 0.0005,
+        "min_learning_rate": 0.0001,
+        "cosine_cycle_iters": 20000
+    },
+    "context_length": 128,
+    "batch_size": 12,
+    "initial_max_l2_norm": 200000000,
+    "max_iterations": 20000,
+    "time_limit_in_seconds": 3600
+}

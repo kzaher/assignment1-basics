@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+# Install system deps
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install PyTorch (arm64 wheel will be picked automatically on M1/M2/M4)
+RUN pip install --no-cache-dir torch torchvision torchaudio
+
+# Verify installation
+RUN python -c "import torch; print('PyTorch version:', torch.__version__, 'CUDA available:', torch.cuda.is_available(), 'MPS available:', torch.backends.mps.is_available())"

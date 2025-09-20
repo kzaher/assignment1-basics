@@ -24,7 +24,11 @@ dependencies = [
     "cppyy>=3.5.0",
 ]
 
-
+[dependency-groups]
+rocm = [
+    "torch==2.8.0+rocm6.4; sys_platform == 'linux' or platform_machine != 'x86_64'", # ROCM
+    "torchvision==0.23.0+rocm6.4; sys_platform == 'linux' or platform_machine != 'x86_64'", # ROCM
+]
 
 [tool.setuptools.packages.find]
 include = ["cs336_basics"]
@@ -33,6 +37,17 @@ include = ["cs336_basics"]
 [tool.uv]
 package = true
 python-preference = "managed"
+index-strategy = "unsafe-best-match"
+
+# Add PyPI first so it's checked before ROCm index for non-PyTorch packages
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+
+# ROCm index for PyTorch packages
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm6.4"
 
 [tool.pytest.ini_options]
 log_cli = true

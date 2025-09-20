@@ -16,7 +16,14 @@ sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretrain
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_10MB.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json --checkpoint=0 ;
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_10k.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 ;
 
-sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_2B.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 
+
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 
+
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_batch.json  --checkpoint=0 
+
+uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_learning_rate.json  --checkpoint=0
+uv run --group rocm cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_learning_rate.json  --checkpoint=0
 """
 
 import sys

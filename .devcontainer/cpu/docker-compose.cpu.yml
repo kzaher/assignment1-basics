@@ -1,0 +1,4 @@
+services:
+  cs336-dev:
+    build:
+      dockerfile: cpu/Dockerfile.cpu

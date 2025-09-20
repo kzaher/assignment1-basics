@@ -1,5 +1,5 @@
 {
-    "name": "owt_gemma",
+    "name": "owt_gemma_270M",
     "training_data_path": "data/owt_train.txt",
     "validation_data_path": "data/owt_valid.txt",
     "checkpoint_persist_modulus": 500,
@@ -14,13 +14,13 @@
     },
     "transformer_llm": {
         "vocab_size": 32000,
-        "max_sequence_length": 2048,
-        "d_model": 2304,
-        "num_layers": 26,
-        "num_query_heads": 8,
-        "num_key_value_heads": 4,
+        "max_sequence_length": 1024,
+        "d_model": 640,
+        "num_layers": 18,
+        "num_query_heads": 4,
+        "num_key_value_heads": 1,
         "d_head": 256,
-        "d_hidden": 9216,
+        "d_hidden": 2048,
         "rope_theta": 10000,
         "device": "cuda",
         "dtype_str": "bfloat16",
@@ -35,13 +35,13 @@
         "zero_iters": 0,
         "warmup_iters": 1000,
         "use_cosine_rampup": false,
-        "max_learning_rate": 0.0005,
+        "max_learning_rate": 0.001,
         "min_learning_rate": 0.0001,
-        "cosine_cycle_iters": 20000
+        "cosine_cycle_iters": 200000
     },
-    "context_length": 128,
-    "batch_size": 12,
+    "context_length": 256,
+    "batch_size": 256,
     "initial_max_l2_norm": 200000000,
-    "max_iterations": 20000,
+    "max_iterations": 10000,
     "time_limit_in_seconds": 3600
 }

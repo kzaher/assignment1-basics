@@ -1,0 +1,12 @@
+{
+    "values": [
+        {
+            "path": "training_loop.annealing_configuration.cosine_cycle_iters",
+            "string_values": [
+                4000,
+                10000,
+                20000
+            ]
+        }
+    ]
+}

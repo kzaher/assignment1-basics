@@ -401,11 +401,17 @@ class Pretrainer:
         
         count_parameters = pd.DataFrame(
             [
-                {"name": name, "params": np.prod(param.size())}
+                {"name": name, "params": param.numel()}
                 for name, param in self._uncompiled_model.named_parameters()
             ]
         )
-        # print(f"# Params\n{count_parameters}")
+        with pd.option_context(
+            "display.max_rows", None,
+            "display.max_columns", None,
+            "display.width", None,
+            "display.max_colwidth", None
+        ):
+            print(f"# Params\n{count_parameters}")
         total_params = count_parameters["params"].sum()
         print(f'# Total params: {total_params:,}')
 
