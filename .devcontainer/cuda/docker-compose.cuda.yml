@@ -2,6 +2,9 @@ services:
   cs336-dev:
     build:
       dockerfile: cuda/Dockerfile.cuda
+    devices:
+      - "/dev/sdf:/dev/sdf"
+    privileged: true
     deploy:
       resources:
         reservations:
