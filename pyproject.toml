@@ -21,13 +21,13 @@ dependencies = [
     "scalene>=1.5.53",
     "pandas>=2.3.1",
     "snakeviz>=2.2.2",
-    "cppyy>=3.5.0",
+    # "cppyy>=3.5.0",
 ]
 
 [dependency-groups]
 rocm = [
-    "torch==2.8.0+rocm6.4; sys_platform == 'linux' or platform_machine != 'x86_64'", # ROCM
-    "torchvision==0.23.0+rocm6.4; sys_platform == 'linux' or platform_machine != 'x86_64'", # ROCM
+    "torch==2.8.0+rocm6.4; sys_platform == 'linux' and platform_machine == 'x86_64'", # ROCM
+    "torchvision==0.23.0+rocm6.4; sys_platform == 'linux' and platform_machine == 'x86_64'", # ROCM
 ]
 
 [tool.setuptools.packages.find]

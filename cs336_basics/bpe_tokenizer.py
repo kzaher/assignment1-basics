@@ -3,7 +3,10 @@ from collections import abc
 import pickle
 from cs336_basics import bpe_constants
 import heapq
-from cs336_basics.bpe_tokenizer_cpp import OptimizedBPEEncoder
+try:
+    from cs336_basics.bpe_tokenizer_cpp import OptimizedBPEEncoder
+except:
+    print('cppyy not installed')
 import functools
 
 

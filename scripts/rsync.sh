@@ -1,14 +1,13 @@
 function rsync_default() {
-  rsync -avhLz --progress --no-owner --no-group \
+  rsync -avhz --progress --no-owner --no-group \
+    ${RSYNC_EXTRA_FLAGS} \
     --exclude '.git/' \
     --exclude 'experiments/' \
     --exclude '.devcontainer/.uv-cache/' \
     --exclude '.devcontainer/.venv/' \
     --exclude '.venv/' \
     --exclude 'wandb/' \
-    --include 'data/' \
-    --include 'data/owt_train.txt.tokens.vocab_size=32000.npy' \
-    --include 'data/owt_valid.txt.tokens.vocab_size=32000.npy' \
-    --exclude 'data/*' \
-    $@ 
+    --exclude '__pycache__/' \
+    --exclude '*.egg-info/' \
+    "$@" 
 }
