@@ -4,6 +4,13 @@ POD_WORKDIR="/workspace"
 JOZODOC_CONTAINER="assignment1-basics_devcontainer-cs336-dev-1"
 
 function load_runpod_env() {
+  # Check if all required variables are already set
+  if [[ -n "$RP_IP" && -n "$RP_SSH_PORT" && -n "$POD_ID" ]]; then
+    # Variables already loaded, just export them to ensure they're available
+    export RP_IP RP_SSH_PORT POD_ID
+    return 0
+  fi
+
   # Safely load runpod environment variables without crashing the shell
   local env_vars
   local all_output
@@ -11,6 +18,8 @@ function load_runpod_env() {
     # Extract only the environment variable lines for eval
     env_vars=$(echo "$all_output" | grep -E "^(RP_IP|RP_SSH_PORT|POD_ID)=")
     eval "$env_vars"
+    # Export the variables so they're cached and available to child processes
+    export RP_IP RP_SSH_PORT POD_ID
     return 0
   else
     echo "Error: Failed to load runpod environment" >&2
@@ -20,38 +29,62 @@ function load_runpod_env() {
   fi
 }
 
-function run_jozo() {
-  if [ $# -eq 0 ]; then
-    # No arguments - start interactive shell in configured directory
-    ssh kruno@jozo -i ~/.ssh/id_jozo -t "cd ${JOZO_WORKDIR} && bash"
-  else
-    # Execute the provided command
-    echo "cd /mnt/c/p/assignment1-basics; $@" | ssh kruno@jozo -i ~/.ssh/id_jozo "bash"
+# Generic function for running commands on remote targets
+# Environment variables: RUN_SETUP_CMD, RUN_SSH_CMD, RUN_SHELL_STARTUP, RUN_WORKDIR
+# Use \${INTERACTIVE} in commands to add -t flag only for interactive mode
+function run_generic() {
+  # Execute setup command if provided (e.g., load_runpod_env)
+  if [ -n "$RUN_SETUP_CMD" ]; then
+    if ! eval "$RUN_SETUP_CMD"; then
+      return 1
+    fi
   fi
+  
+  if [ $# -eq 0 ]; then
+    # No arguments - start interactive shell (set INTERACTIVE flag)
+    local INTERACTIVE="-t"
+    local INTERACTIVE_RAW="t"
+    local ssh_cmd=$(eval echo "$RUN_SSH_CMD")
+    local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
+
+    # No arguments - start interactive shell
+    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc')\""
+  else
+    # Execute the provided command (INTERACTIVE is empty)
+    local INTERACTIVE="-t"
+    local INTERACTIVE_RAW="t"
+    local ssh_cmd=$(eval echo "$RUN_SSH_CMD")
+    local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
+    # echo "cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && $@" | ${ssh_cmd} "${shell_startup}"
+    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc; $@')\""
+  fi
+}
+
+function run_jozo() {
+  RUN_SETUP_CMD="" \
+  RUN_SSH_CMD="ssh \${INTERACTIVE} kruno@jozo -i ~/.ssh/id_jozo" \
+  RUN_SHELL_STARTUP="bash" \
+  RUN_WORKDIR="/mnt/${JOZO_WORKDIR}" \
+  INIT="true" \
+  run_generic "$@"
 }
 
 function run_jozodoc() {
-  if [ $# -eq 0 ]; then
-    # No arguments - start interactive bash shell in the container
-    ssh kruno@jozo -i ~/.ssh/id_jozo -t "docker exec -it ${JOZODOC_CONTAINER} bash"
-  else
-    # Execute the provided command in the container
-    echo "cd /mnt/c/p/assignment1-basics; $@" | ssh kruno@jozo -i ~/.ssh/id_jozo -t "docker exec -it ${JOZODOC_CONTAINER} bash"
-  fi
+  RUN_SETUP_CMD="" \
+  RUN_SSH_CMD="ssh \${INTERACTIVE} kruno@jozo -i ~/.ssh/id_jozo" \
+  RUN_SHELL_STARTUP="docker exec -i\${INTERACTIVE_RAW} ${JOZODOC_CONTAINER} bash" \
+  RUN_WORKDIR="/workspace" \
+  INIT="true" \
+  run_generic "$@"
 }
 
 function run_pod() {
-  if load_runpod_env; then
-    if [ $# -eq 0 ]; then
-      # No arguments - start interactive shell in configured directory
-      ssh -i ~/.ssh/id_runpod -p "$RP_SSH_PORT" root@"$RP_IP" -t "cd ${POD_WORKDIR} && bash"
-    else
-      # Execute the provided command
-      echo "cd /mnt/c/p/assignment1-basics; $@" | ssh -i ~/.ssh/id_runpod -t -p "$RP_SSH_PORT" root@"$RP_IP"
-    fi
-  else
-    return 1
-  fi
+  RUN_SETUP_CMD="load_runpod_env" \
+  RUN_SSH_CMD="ssh \${INTERACTIVE} -i ~/.ssh/id_runpod -p \$RP_SSH_PORT root@\$RP_IP" \
+  RUN_SHELL_STARTUP="bash" \
+  RUN_WORKDIR="${POD_WORKDIR}" \
+  INIT="export \$(cat /proc/1/environ | tr '\\000' '\\n' | grep -E '^(JUPYTER_PASSWORD|WANDB_API_KEY|RUNPOD_API_KEY_EXTERNAL|RUNPOD_POD_ID|RUNPOD_GPU_COUNT|RUNPOD_MEM_GB)=' | xargs)" \
+  run_generic "$@"
 }
 
 function run() {
@@ -73,6 +106,9 @@ function push_jozo() {
   . ./scripts/rsync.sh
   # Use -l to preserve symbolic links for jozo
   RSYNC_EXTRA_FLAGS="" RSYNC_RSH="ssh -i ~/.ssh/id_jozo" rsync_default --exclude 'data/*' --rsync-path="wsl rsync" . kruno@jozo:/mnt/c/p/assignment1-basics/
+}
+function push_jozodoc() {
+  push_jozo
 }
 function push_pod() {
   if load_runpod_env; then
@@ -134,3 +170,5 @@ function sleep_pod() {
   curl -sS -H "Authorization: Bearer $RUNPOD_API_KEY_EXTERNAL" "https://rest.runpod.io/v1/pods/$RUNPOD_POD_ID" 
   echo "Pod stopped."
 }
+
+export -f sleep_pod
