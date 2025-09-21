@@ -3,12 +3,15 @@ JOZO_WORKDIR="/c/p/assignment1-basics"
 POD_WORKDIR="/workspace"
 JOZODOC_CONTAINER="assignment1-basics_devcontainer-cs336-dev-1"
 
+# Debug control - set to 1 to enable debug output, 0 to disable
+DEBUG_SCRIPT=${DEBUG_SCRIPT:-1}
+
 function load_runpod_env() {
   # Check if all required variables are already set
   if [[ -n "$RP_IP" && -n "$RP_SSH_PORT" && -n "$POD_ID" ]]; then
     # Variables already loaded, just export them to ensure they're available
     export RP_IP RP_SSH_PORT POD_ID
-    echo "Reusing POD_ID=${POD_ID} RP_IP=${RP_IP} RP_SSH_PORT=${RP_SSH_PORT}"
+    # echo "Reusing POD_ID=${POD_ID} RP_IP=${RP_IP} RP_SSH_PORT=${RP_SSH_PORT}"
     return 0
   fi
 
@@ -20,7 +23,7 @@ function load_runpod_env() {
     env_vars=$(echo "$all_output" | grep -E "^(RP_IP|RP_SSH_PORT|POD_ID)=")
     eval "$env_vars"
     # Export the variables so they're cached and available to child processes
-    export RP_IP RP_SSH_PORT POD_IDt 
+    export RP_IP RP_SSH_PORT POD_ID
     return 0
   else
     echo "Error: Failed to load runpod environment" >&2
@@ -30,14 +33,33 @@ function load_runpod_env() {
   fi
 }
 
+function debug_args() {
+  if [[ "$DEBUG_SCRIPT" -ge 1 ]]; then
+    echo "Number of arguments: $#" >&2
+    echo "All args as one string (\$*): '$*'" >&2
+    echo "All args as separate (\$@): '$@'" >&2
+    printf '%s' "$*" >&2
+    for i in $(seq 1 $#); do
+      echo "Arg $i: '${!i}'" >&2
+    done
+  fi
+}
+
 function encode_args() {
-  local encoded
-  printf -v encoded '%q ' "$@"
-  printf '%s' "$encoded" | base64 -w 0
+  printf '%s' "$*" | base64 -w 0
 }
 
 function encode_command() {
-  echo "eval \$(printf \\\\042)\$(base64 -d <<< $(encode_args "$@"))\$(printf \\\\042)"
+  if [[ "$DEBUG_SCRIPT" -ge 2 ]]; then
+    echo "=== ENCODE_COMMAND DEBUG ===" >&2
+    debug_args "$@"
+    echo "============================" >&2
+  fi
+  local encoded_cmd="eval \$(printf \\\\042)\$(base64 -d <<< $(encode_args "$@"))\$(printf \\\\042)"
+  if [[ "$DEBUG_SCRIPT" -ge 2 ]]; then
+    echo "Final encoded command: $encoded_cmd" >&2
+  fi
+  echo "$encoded_cmd"
 }
 
 
@@ -45,6 +67,12 @@ function encode_command() {
 # Environment variables: RUN_SETUP_CMD, RUN_SSH_CMD, RUN_SHELL_STARTUP, RUN_WORKDIR
 # Use \${INTERACTIVE} in commands to add -t flag only for interactive mode
 function run_generic() {
+  if [[ "$DEBUG_SCRIPT" -ge 1 ]]; then
+    echo "=== RUN_GENERIC DEBUG ==="
+    debug_args "$@"
+    echo "========================="
+  fi
+  
   # Execute setup command if provided (e.g., load_runpod_env)
   if [ -n "$RUN_SETUP_CMD" ]; then
     if ! eval "$RUN_SETUP_CMD"; then
@@ -58,12 +86,18 @@ function run_generic() {
     local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
 
     # No arguments - start interactive shell
-    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc')\""
+    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && . ./scripts/register_commands.sh && ${INIT} && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc')\""
   else
     local ssh_cmd=$(eval echo "$RUN_SSH_CMD")
     local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
-
-    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export && . ./scripts/register_commands.sh && ${INIT} && $(encode_command "$@")\""
+    local full_command="$shell_startup -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && . ./scripts/register_commands.sh && ${INIT} && $(encode_command "$@")\""
+    
+    if [[ "$DEBUG_SCRIPT" -ge 1 ]]; then
+      echo "SSH command: $ssh_cmd"
+      echo "Full remote command: $full_command"
+    fi
+    
+    ${ssh_cmd} "$full_command"
   fi
 }
 
@@ -92,6 +126,12 @@ function run_pod() {
   RUN_WORKDIR="${POD_WORKDIR}" \
   INIT="export \$(cat /proc/1/environ | tr '\\000' '\\n' | grep -E '^(JUPYTER_PASSWORD|WANDB_API_KEY|RUNPOD_API_KEY_EXTERNAL|RUNPOD_POD_ID|RUNPOD_GPU_COUNT|RUNPOD_MEM_GB)=' | xargs)" \
   run_generic "$@"
+}
+
+run_podscreen() {
+  # echo screen -S background bash -c "'$(encode_command "$*")'"
+  # run_pod screen -S background bash -c "$*"
+  run_pod screen -S background bash -c "echo stay && sleep 120"
 }
 
 function run() {
@@ -131,6 +171,9 @@ function push_pod() {
     return 1
   fi
 }
+function push_podscreen() {
+  push_pod
+}
 
 function push() {
   local target="$1"
@@ -151,6 +194,13 @@ function pushrun() {
   local target="$1"
   shift
   
+  if [[ "$DEBUG_SCRIPT" -ge 1 ]]; then
+    echo "=== PUSHRUN DEBUG ==="
+    echo "Target: $target"
+    debug_args "$@"
+    echo "===================="
+  fi
+  
   echo "Push and run on ${target}..."
   if push "$target"; then
     run "$target" "$@"
@@ -161,6 +211,10 @@ function pushrun() {
 }
 
 function sleep_pod() {
+  if ! [[ -n "${RUNPOD_POD_ID}" ]]; then
+    run pod sleep_pod
+    return 0
+  fi
   echo "Job complete. Requesting stop for $RUNPOD_POD_ID key=$RUNPOD_API_KEY external=$RUNPOD_API_KEY_EXTERNAL"
 
   echo "Authorization: Bearer $RUNPOD_API_KEY_EXTERNAL"
@@ -176,6 +230,14 @@ function sleep_pod() {
 
   curl -sS -H "Authorization: Bearer $RUNPOD_API_KEY_EXTERNAL" "https://rest.runpod.io/v1/pods/$RUNPOD_POD_ID" 
   echo "Pod stopped."
+}
+
+function sleep_jozo() {
+  if ! [[ -f "/mnt/c/Users/kruno/sleep_computer.bat" ]]; then
+    run jozo sleep_jozo
+    return 0
+  fi
+  run_jozo /mnt/c/Users/kruno/sleep_computer.bat
 }
 
 export -f sleep_pod

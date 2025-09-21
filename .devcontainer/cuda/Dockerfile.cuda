@@ -54,6 +54,8 @@ RUN python3 -m venv /opt/venv
 RUN /opt/venv/bin/pip install --upgrade pip && \
     /opt/venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
+RUN echo '. ./scripts/register_commands.sh' >> /home/vscode/.bashrc
+
 RUN sudo npm install -g @openai/codex
 RUN sudo npm install -g @google/gemini-cli
 
