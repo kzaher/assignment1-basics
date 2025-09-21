@@ -4,14 +4,16 @@ POD_WORKDIR="/workspace"
 JOZODOC_CONTAINER="assignment1-basics_devcontainer-cs336-dev-1"
 
 # Debug control - set to 1 to enable debug output, 0 to disable
-DEBUG_SCRIPT=${DEBUG_SCRIPT:-1}
+DEBUG_SCRIPT=${DEBUG_SCRIPT:-0}
 
 function load_runpod_env() {
   # Check if all required variables are already set
   if [[ -n "$RP_IP" && -n "$RP_SSH_PORT" && -n "$POD_ID" ]]; then
     # Variables already loaded, just export them to ensure they're available
     export RP_IP RP_SSH_PORT POD_ID
-    # echo "Reusing POD_ID=${POD_ID} RP_IP=${RP_IP} RP_SSH_PORT=${RP_SSH_PORT}"
+    if [[ ${DEBUG_SCRIPT} -ge 1 ]]; then
+      echo "Reusing POD_ID=${POD_ID} RP_IP=${RP_IP} RP_SSH_PORT=${RP_SSH_PORT}"
+    fi
     return 0
   fi
 
@@ -38,7 +40,6 @@ function debug_args() {
     echo "Number of arguments: $#" >&2
     echo "All args as one string (\$*): '$*'" >&2
     echo "All args as separate (\$@): '$@'" >&2
-    printf '%s' "$*" >&2
     for i in $(seq 1 $#); do
       echo "Arg $i: '${!i}'" >&2
     done
@@ -46,22 +47,35 @@ function debug_args() {
 }
 
 function encode_args() {
-  printf '%s' "$*" | base64 -w 0
+  printf '%s\0' "$@" | base64 -w 0
 }
 
-function encode_command() {
+function exec_base64_command() {
+  mapfile -d '' -t argv < <(echo "${1}" | base64 -d );
   if [[ "$DEBUG_SCRIPT" -ge 2 ]]; then
-    echo "=== ENCODE_COMMAND DEBUG ===" >&2
-    debug_args "$@"
+    echo "=== exec_base64_command DEBUG ===" >&2
+    debug_args "${argv[@]}"
     echo "============================" >&2
   fi
-  local encoded_cmd="eval \$(printf \\\\042)\$(base64 -d <<< $(encode_args "$@"))\$(printf \\\\042)"
-  if [[ "$DEBUG_SCRIPT" -ge 2 ]]; then
-    echo "Final encoded command: $encoded_cmd" >&2
+  if [[ ${#argv[@]} -gt 0 && "${argv[0]}" != "" ]]; then
+    exec "${argv[@]}"
   fi
-  echo "$encoded_cmd"
 }
 
+function eval_base64_command() {
+  mapfile -d '' -t argv < <(echo "${1}" | base64 -d ); 
+  if [[ "$DEBUG_SCRIPT" -ge 2 ]]; then
+    echo "=== eval_base64_command DEBUG ===" >&2
+    debug_args "${argv[@]}"
+    echo "============================" >&2
+  fi
+  eval "${argv[@]}"
+}
+
+function initialize_run() {
+  # Forwards process environment variables.
+  export $(cat /proc/1/environ | tr '\000' '\n' | grep -E '^(JUPYTER_PASSWORD|WANDB_API_KEY|RUNPOD_API_KEY_EXTERNAL|RUNPOD_POD_ID|RUNPOD_GPU_COUNT|RUNPOD_MEM_GB)=' | xargs)
+}
 
 # Generic function for running commands on remote targets
 # Environment variables: RUN_SETUP_CMD, RUN_SSH_CMD, RUN_SHELL_STARTUP, RUN_WORKDIR
@@ -79,26 +93,9 @@ function run_generic() {
       return 1
     fi
   fi
-  
-  if [ $# -eq 0 ]; then
-    # No arguments - start interactive shell (set INTERACTIVE flag)
-    local ssh_cmd=$(eval echo "$RUN_SSH_CMD")
-    local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
 
-    # No arguments - start interactive shell
-    ${ssh_cmd} "$shell_startup -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && . ./scripts/register_commands.sh && ${INIT} && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc')\""
-  else
-    local ssh_cmd=$(eval echo "$RUN_SSH_CMD")
-    local shell_startup=$(eval echo "$RUN_SHELL_STARTUP")
-    local full_command="$shell_startup -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && . ./scripts/register_commands.sh && ${INIT} && $(encode_command "$@")\""
-    
-    if [[ "$DEBUG_SCRIPT" -ge 1 ]]; then
-      echo "SSH command: $ssh_cmd"
-      echo "Full remote command: $full_command"
-    fi
-    
-    ${ssh_cmd} "$full_command"
-  fi
+  INTERPRETER=${INTERPRETER:-exec_base64_command}
+  ${RUN_SSH_CMD} "$RUN_SHELL_STARTUP -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc; initialize_run; ${INTERPRETER} $(encode_args "$@")');\""
 }
 
 function run_jozo() {
@@ -106,7 +103,6 @@ function run_jozo() {
   RUN_SSH_CMD="ssh -t kruno@jozo -i ~/.ssh/id_jozo" \
   RUN_SHELL_STARTUP="bash" \
   RUN_WORKDIR="/mnt/${JOZO_WORKDIR}" \
-  INIT="true" \
   run_generic "$@"
 }
 
@@ -115,38 +111,46 @@ function run_jozodoc() {
   RUN_SSH_CMD="ssh -t kruno@jozo -i ~/.ssh/id_jozo" \
   RUN_SHELL_STARTUP="docker exec -it ${JOZODOC_CONTAINER} bash" \
   RUN_WORKDIR="/workspace" \
-  INIT="true" \
   run_generic "$@"
 }
 
 function run_pod() {
   RUN_SETUP_CMD="load_runpod_env" \
-  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod -p \$RP_SSH_PORT root@\$RP_IP" \
-  RUN_SHELL_STARTUP="bash" \
+  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod -p $RP_SSH_PORT root@$RP_IP" \
+  RUN_SHELL_STARTUP="${RUN_SHELL_STARTUP:-bash}" \
   RUN_WORKDIR="${POD_WORKDIR}" \
-  INIT="export \$(cat /proc/1/environ | tr '\\000' '\\n' | grep -E '^(JUPYTER_PASSWORD|WANDB_API_KEY|RUNPOD_API_KEY_EXTERNAL|RUNPOD_POD_ID|RUNPOD_GPU_COUNT|RUNPOD_MEM_GB)=' | xargs)" \
   run_generic "$@"
 }
 
 run_podscreen() {
-  # echo screen -S background bash -c "'$(encode_command "$*")'"
-  # run_pod screen -S background bash -c "$*"
-  run_pod screen -S background bash -c "echo stay && sleep 120"
+  if [[ "$DEBUG_SCRIPT" -ge 1 ]]; then
+    echo "=== RUN_PODSCREEN DEBUG ==="
+    debug_args "$@"
+    echo "========================="
+  fi
+  RUN_SHELL_STARTUP="screen -S background bash" \
+  run_pod "$@"
 }
 
-function run() {
-  local target="$1"
-  shift
-  local func_name="run_${target}"
+# Generic dispatcher function for commands with target-specific implementations
+function dispatch_to_target() {
+  local command_prefix="$1"
+  local target="$2"
+  shift 2
+  local func_name="${command_prefix}_${target}"
   
   if declare -f "$func_name" > /dev/null; then
     "$func_name" "$@"
   else
     # Automatically detect available targets
-    local available_targets=$(declare -F | grep "^declare -f run_" | sed 's/declare -f run_//' | tr '\n' ' ')
+    local available_targets=$(declare -F | grep "^declare -f ${command_prefix}_" | sed "s/declare -f ${command_prefix}_//" | tr '\n' ' ')
     echo "Error: Unknown target '$target'. Available targets: ${available_targets}"
     return 1
   fi
+}
+
+function run() {
+  dispatch_to_target "run" "$@"
 }
 
 function push_jozo() {
@@ -176,18 +180,7 @@ function push_podscreen() {
 }
 
 function push() {
-  local target="$1"
-  shift
-  local func_name="push_${target}"
-  
-  if declare -f "$func_name" > /dev/null; then
-    "$func_name" "$@"
-  else
-    # Automatically detect available targets
-    local available_targets=$(declare -F | grep "^declare -f push_" | sed 's/declare -f push_//' | tr '\n' ' ')
-    echo "Error: Unknown target '$target'. Available targets: ${available_targets}"
-    return 1
-  fi
+  dispatch_to_target "push" "$@"
 }
 
 function pushrun() {
@@ -210,11 +203,20 @@ function pushrun() {
   fi
 }
 
-function sleep_pod() {
+function down_pod() {
   if ! [[ -n "${RUNPOD_POD_ID}" ]]; then
-    run pod sleep_pod
+    INTERPRETER=eval_base64_command pushrun pod down_pod
     return 0
   fi
+  down_this_pod
+}
+
+# Alias for down_pod
+function pod_down() {
+  down_pod "$@"
+}
+
+function down_this_pod() {
   echo "Job complete. Requesting stop for $RUNPOD_POD_ID key=$RUNPOD_API_KEY external=$RUNPOD_API_KEY_EXTERNAL"
 
   echo "Authorization: Bearer $RUNPOD_API_KEY_EXTERNAL"
@@ -232,12 +234,90 @@ function sleep_pod() {
   echo "Pod stopped."
 }
 
-function sleep_jozo() {
+function down_jozo() {
   if ! [[ -f "/mnt/c/Users/kruno/sleep_computer.bat" ]]; then
-    run jozo sleep_jozo
+    run jozo down_jozo
     return 0
   fi
-  run_jozo /mnt/c/Users/kruno/sleep_computer.bat
+  down_this_jozo
 }
 
-export -f sleep_pod
+function down_this_jozo() {
+  bash -c "/mnt/c/Users/kruno/sleep_computer.bat"
+}
+
+# Alias for down_jozo
+function jozo_down() {
+  down_jozo "$@"
+}
+
+function down() {
+  if ! [[ -n "$@" ]]; then
+    down_this
+    return 0
+  fi
+  dispatch_to_target "down" "$@"
+}
+
+function up_jozo() {
+  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
+  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
+  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
+  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
+  ssh k@raspberrypi.tailb3978.ts.net ping jozo
+}
+
+function up_pod() {
+  up_this_pod
+}
+
+function read_pod_status() {
+  curl -sS -H "Authorization: Bearer $RUNPOD_API_KEY" "https://rest.runpod.io/v1/pods/79rzj7t4o6onxv"  |  jq -r '.desiredStatus'
+}
+
+function up_this_pod() {
+  load_runpod_env
+  if ! [[ -n $"POD_ID" ]]; then
+    echo No pod detected
+    return 1
+  fi 
+
+  STATUS=$(read_pod_status)
+  if [[ "${STATUS}" == "RUNNING" ]]; then
+    echo "Pod ${POD_ID} is already running. ✅"
+    return 0
+  fi
+
+  echo "Starting suspended pod $POD_ID"
+
+  echo "Authorization: Bearer $RUNPOD_API_KEY"
+  echo "https://rest.runpod.io/v1/pods/$POD_ID/start"
+
+  curl -m 2 --connect-timeout 2 -fS \
+    -H "Authorization: Bearer $RUNPOD_API_KEY" \
+    -X POST "https://rest.runpod.io/v1/pods/$POD_ID/start" \
+    -w '\nCURL exit=%{exitcode} HTTP=%{http_code} bytes=%{size_download} time=%{time_total}s\n' \
+    -o /tmp/resume.body || echo Failed ❗️ && return 1
+
+  while [[ "${STATUS}" != "RUNNING" ]] do
+    STATUS=$(read_pod_status)
+    sleep 1
+    echo "Status ${STATUS}"
+  done
+  echo "Pod resumed. ✅"
+}
+
+function up() {
+  dispatch_to_target "up" "$@"
+}
+
+function down_this() {
+    if [[ -n "${RUNPOD_POD_ID}" ]]; then
+      down_this_pod
+    elif [[ -f "/mnt/c/Users/kruno/sleep_computer.bat" ]]; then 
+      down_this_jozo
+    else 
+      echo "This survived" >&2
+      return 1
+    fi
+}

@@ -51,6 +51,6 @@
             "label": "SSH"
         }
     },
-    "postCreateCommand": "mkdir -p ~/.ssh/; echo \"${JOZO_SSH}\" > ~/.ssh/id_jozo; echo \"${RUNPOD_SSH}\" > ~/.ssh/id_runpod; sudo chown -R vscode:vscode ~/.ssh && sudo chmod 700 ~/.ssh && sudo chmod 600 ~/.ssh/*",
+    "postCreateCommand": "echo '. ./scripts/register_commands.sh || true' >> /home/vscode/.bashrc; mkdir -p ~/.ssh/; echo \"${JOZO_SSH}\" > ~/.ssh/id_jozo; echo \"${RUNPOD_SSH}\" > ~/.ssh/id_runpod; sudo chown -R vscode:vscode ~/.ssh && sudo chmod 700 ~/.ssh && sudo chmod 600 ~/.ssh/*",
     "remoteUser": "vscode"
 }

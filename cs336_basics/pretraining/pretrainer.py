@@ -104,6 +104,8 @@ class Pretrainer:
         self._run_id = str(metadata["run_id"])
 
     def _persist_checkpoint(self):
+        if not self._configuration.training_loop.write_checkpoint:
+            return
         extensions.save_checkpoint(
             self._model,
             self._optimizer,

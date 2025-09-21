@@ -194,6 +194,7 @@ class LlmPretrainingTrainingLoopConfiguration:
     initial_max_l2_norm: float
     max_iterations: int | None = None
     time_limit_in_seconds: int | None = None
+    write_checkpoint: bool = False
 
     @classmethod
     def from_dict(cls, object: dict) -> "LlmPretrainingTrainingLoopConfiguration":

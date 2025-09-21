@@ -3,7 +3,7 @@ if [ -z "$POD_ID" ]; then
   echo "POD_ID not specified, fetching available pods..."
   POD_ID=$(curl -sS -H "Authorization: Bearer $RUNPOD_API_KEY" \
     "https://rest.runpod.io/v1/pods" \
-    | jq -r '.[] | select(.desiredStatus == "RUNNING") | .id' \
+    | jq -r '.[] | .id' \
     | head -n 1)
   
   if [ -z "$POD_ID" ]; then
