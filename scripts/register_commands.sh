@@ -94,8 +94,9 @@ function run_generic() {
     fi
   fi
 
+
   INTERPRETER=${INTERPRETER:-exec_base64_command}
-  ${RUN_SSH_CMD} "$RUN_SHELL_STARTUP -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc; initialize_run; ${INTERPRETER} $(encode_args "$@")');\""
+  $(eval echo "${RUN_SSH_CMD}") "$RUN_SHELL_STARTUP -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc; initialize_run; ${INTERPRETER} $(encode_args "$@")');\""
 }
 
 function run_jozo() {
@@ -116,7 +117,7 @@ function run_jozodoc() {
 
 function run_pod() {
   RUN_SETUP_CMD="load_runpod_env" \
-  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod -p $RP_SSH_PORT root@$RP_IP" \
+  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod -p \${RP_SSH_PORT} root@\${RP_IP}" \
   RUN_SHELL_STARTUP="${RUN_SHELL_STARTUP:-bash}" \
   RUN_WORKDIR="${POD_WORKDIR}" \
   run_generic "$@"
@@ -299,7 +300,7 @@ function up_this_pod() {
     -w '\nCURL exit=%{exitcode} HTTP=%{http_code} bytes=%{size_download} time=%{time_total}s\n' \
     -o /tmp/resume.body || echo Failed ❗️ && return 1
 
-  while [[ "${STATUS}" != "RUNNING" ]] do
+  while [[ "${STATUS}" != "RUNNING" ]]; do
     STATUS=$(read_pod_status)
     sleep 1
     echo "Status ${STATUS}"

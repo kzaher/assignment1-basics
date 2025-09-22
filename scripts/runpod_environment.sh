@@ -23,8 +23,3 @@ read RP_IP RP_SSH_PORT < <(
 )
 
 export RP_IP RP_SSH_PORT
-
-# Output variables in the format expected by load_runpod_env
-echo "RP_IP=$RP_IP"
-echo "RP_SSH_PORT=$RP_SSH_PORT"
-echo "POD_ID=$POD_ID"
