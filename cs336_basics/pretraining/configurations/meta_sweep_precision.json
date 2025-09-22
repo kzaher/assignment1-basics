@@ -1,0 +1,28 @@
+{
+    "values": [
+        {
+            "path": "training_loop.transformer_llm.dtype_str",
+            "string_values": [
+                "bfloat16",
+                "bfloat16",
+                "float32"
+            ]
+        },
+        {
+            "path": "training_loop.batch_size",
+            "string_values": [
+                512,
+                256,
+                256
+            ]
+        },
+        {
+            "path": "training_loop.context_length",
+            "string_values": [
+                128,
+                256,
+                256
+            ]
+        }
+    ]
+}

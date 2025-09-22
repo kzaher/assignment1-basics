@@ -236,7 +236,7 @@ function down_this_pod() {
 
 function down_jozo() {
   if ! [[ -f "/mnt/c/Users/kruno/sleep_computer.bat" ]]; then
-    run jozo down_jozo
+    INTERPRETER=eval_base64_command run jozo down_jozo
     return 0
   fi
   down_this_jozo
@@ -321,3 +321,7 @@ function down_this() {
       return 1
     fi
 }
+
+export -f down
+export -f down_this_pod
+export -f down_this_jozo
