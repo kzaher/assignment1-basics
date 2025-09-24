@@ -107,6 +107,14 @@ function run_jozo() {
   run_generic "$@"
 }
 
+function run_jozot() {
+  RUN_SETUP_CMD="" \
+  RUN_SSH_CMD="ssh -t kruno@jozo.tailb3978.ts.net -i ~/.ssh/id_jozo" \
+  RUN_SHELL_STARTUP="bash" \
+  RUN_WORKDIR="/mnt/${JOZO_WORKDIR}" \
+  run_generic "$@"
+}
+
 function run_jozodoc() {
   RUN_SETUP_CMD="" \
   RUN_SSH_CMD="ssh -t kruno@jozo -i ~/.ssh/id_jozo" \
@@ -238,6 +246,14 @@ function down_this_pod() {
 function down_jozo() {
   if ! [[ -f "/mnt/c/Users/kruno/sleep_computer.bat" ]]; then
     INTERPRETER=eval_base64_command run jozo down_jozo
+    return 0
+  fi
+  down_this_jozo
+}
+
+function down_jozot() {
+  if ! [[ -f "/mnt/c/Users/kruno/sleep_computer.bat" ]]; then
+    INTERPRETER=eval_base64_command run jozot down_jozo
     return 0
   fi
   down_this_jozo
