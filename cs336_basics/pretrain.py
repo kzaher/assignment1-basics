@@ -24,7 +24,9 @@ sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretrain
 
 uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_learning_rate.json  --checkpoint=0
 
-pushrun podscreen bash -c  "uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_precision.json; down"
+pushrun podscreen bash -c  "type down && uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_precision.json; down"
+
+pushrun jozodoc bash -c  "type down && sudo uv run --group=cuda cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_optimizer.json; down"
 """
 
 import sys

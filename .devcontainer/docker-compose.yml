@@ -7,11 +7,9 @@ services:
     privileged: false
     volumes:
       - ..:/workspace
-      - .uv-cache:/opt/uv-cache
-      - .venv:/opt/venv
     working_dir: /workspace
     environment:
-      - UV_CACHE_DIR=/opt/uv-cache
+      - UV_CACHE_DIR=/workspace/.uvcache
     env_file:
       - ./.env
     entrypoint:

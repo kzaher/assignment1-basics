@@ -44,17 +44,7 @@ class Pretrainer:
         
         # Compile the model with optimizations for training
         self._model = torch.compile(model, mode="default")
-        optimizer_configuration = (
-            configuration.training_loop.adamw_optimizer_configuration
-        )
-        assert len(optimizer_configuration.betas) == 2
-        self._optimizer = adam_w.AdamW(
-            self._model.parameters(),
-            lr=optimizer_configuration.lr,
-            weight_decay=optimizer_configuration.weight_decay,
-            betas=(optimizer_configuration.betas[0], optimizer_configuration.betas[1]),
-            eps=optimizer_configuration.eps,
-        )
+        self._optimizer, self._optimizer_configuration = self._configuration.training_loop.create_optimizer(self._model.named_parameters())
         self._run_id: str | None = None
 
     def _checkpoint_exists(self, i: int) -> str | None:
@@ -441,7 +431,7 @@ class Pretrainer:
             project=self._configuration.training_loop.name,
             # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
             name=f"{self._configuration.suffix or 'experiment'} {datetime.datetime.fromtimestamp(self._model.start_time.item(), datetime.timezone.utc)} timestamp={self._model.start_time.item()}",
-            config=dataclasses.asdict(self._configuration) | {'total_params': total_params},
+            config=dataclasses.asdict(self._configuration) | {'total_params': total_params} | self._optimizer_configuration,
             **wandb_kw_args,
         ) as run:
             self._run_id = run.id

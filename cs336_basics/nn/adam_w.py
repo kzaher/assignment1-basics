@@ -40,16 +40,17 @@ class AdamW(torch.optim.Optimizer):
                 p_state = self.state[p]
                 t = p_state.get("t", 0) + 1
                 p_state["t"] = t
-                p_state["m"] = betas[0] * p_state["m"] + (1 - betas[0]) * p.grad.data
-                p_state["v"] = betas[1] * p_state["v"] + (1 - betas[1]) * (
-                    p.grad.data * p.grad.data
+                p_state["m"].lerp_(p.grad.data, 1 - betas[0])
+                p_state["v"].mul_(betas[1]).addcmul_(
+                    p.grad.data, p.grad.data, value=1 - betas[1]
                 )
                 alpha_t = (
                     lr
                     * math.sqrt((1 - math.pow(betas[1], t)))
                     / (1 - math.pow(betas[0], t))
                 )
-                p.data -= alpha_t * p_state["m"] / (torch.sqrt(p_state["v"]) + eps)
-                p.data *= 1 - lr * weight_decay
+                denominator = torch.sqrt(p_state["v"]).add_(eps)
+                p.data.addcdiv_(p_state["m"], denominator, value=-alpha_t)
+                p.data.mul_(1 - lr * weight_decay)
 
         return loss

@@ -4,6 +4,7 @@
             "path": "training_loop.transformer_llm.dtype_str",
             "string_values": [
                 "bfloat16",
+                "float32",
                 "bfloat16",
                 "float32"
             ]
@@ -11,17 +12,19 @@
         {
             "path": "training_loop.batch_size",
             "string_values": [
+                1024,
                 512,
-                256,
-                256
+                2048,
+                1024
             ]
         },
         {
             "path": "training_loop.context_length",
             "string_values": [
+                64,
                 128,
-                256,
-                256
+                32,
+                64
             ]
         }
     ]

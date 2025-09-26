@@ -101,15 +101,7 @@ function run_generic() {
 
 function run_jozo() {
   RUN_SETUP_CMD="" \
-  RUN_SSH_CMD="ssh -t kruno@jozo -i ~/.ssh/id_jozo" \
-  RUN_SHELL_STARTUP="bash" \
-  RUN_WORKDIR="/mnt/${JOZO_WORKDIR}" \
-  run_generic "$@"
-}
-
-function run_jozot() {
-  RUN_SETUP_CMD="" \
-  RUN_SSH_CMD="ssh -t kruno@jozo.tailb3978.ts.net -i ~/.ssh/id_jozo" \
+  RUN_SSH_CMD="ssh -t kruno@${SSH_HOSTNAME:-jozo.tailb3978.ts.net} -i ~/.ssh/id_jozo" \
   RUN_SHELL_STARTUP="bash" \
   RUN_WORKDIR="/mnt/${JOZO_WORKDIR}" \
   run_generic "$@"
@@ -117,7 +109,7 @@ function run_jozot() {
 
 function run_jozodoc() {
   RUN_SETUP_CMD="" \
-  RUN_SSH_CMD="ssh -t kruno@jozo -i ~/.ssh/id_jozo" \
+  RUN_SSH_CMD="ssh -t kruno@${SSH_HOSTNAME:-jozo.tailb3978.ts.net} -i ~/.ssh/id_jozo" \
   RUN_SHELL_STARTUP="docker exec -it ${JOZODOC_CONTAINER} bash" \
   RUN_WORKDIR="/workspace" \
   run_generic "$@"
@@ -165,7 +157,7 @@ function run() {
 function push_jozo() {
   . ./scripts/rsync.sh
   # Use -l to preserve symbolic links for jozo
-  RSYNC_EXTRA_FLAGS="" RSYNC_RSH="ssh -i ~/.ssh/id_jozo" rsync_default --exclude 'data/*' --rsync-path="wsl rsync" . kruno@jozo:/mnt/c/p/assignment1-basics/
+  RSYNC_EXTRA_FLAGS="" RSYNC_RSH="ssh -i ~/.ssh/id_jozo" rsync_default --exclude 'data/' --rsync-path="wsl rsync" . kruno@${SSH_HOSTNAME:-jozo.tailb3978.ts.net}:/mnt/c/p/assignment1-basics/
 }
 function push_jozodoc() {
   push_jozo
@@ -340,5 +332,6 @@ function down_this() {
 }
 
 export -f down
+export -f down_this
 export -f down_this_pod
 export -f down_this_jozo

@@ -9,7 +9,11 @@ from cs336_basics.nn import dyt
 from cs336_basics.nn import atan
 from cs336_basics.nn import parabola
 from cs336_basics.nn import silu_monotonic
+from cs336_basics.nn import muon
+from cs336_basics.nn import adam_w
 from cs336_basics import extensions
+from torch.optim import adamw as torch_adamw
+import re
 
 import torch
 
@@ -20,6 +24,13 @@ class AdamWOptimizerConfiguration:
     weight_decay: float
     betas: list[float]
     eps: float
+
+
+@dataclasses.dataclass(frozen=True)
+class MuonOptimizerConfiguration:
+    lr: float
+    momentum: float
+    weight_decay: float
 
 
 @dataclasses.dataclass(frozen=True)
@@ -187,6 +198,7 @@ class LlmPretrainingTrainingLoopConfiguration:
     validation_data_path: str
     checkpoint_persist_modulus: int
     adamw_optimizer_configuration: AdamWOptimizerConfiguration
+    muon_optimizer_configuration: MuonOptimizerConfiguration
     transformer_llm: TransformerLlmConfiguration
     annealing_configuration: AnnealingConfiguration
     batch_size: int
@@ -195,10 +207,89 @@ class LlmPretrainingTrainingLoopConfiguration:
     max_iterations: int | None = None
     time_limit_in_seconds: int | None = None
     write_checkpoint: bool = False
+    optimizer_type: str | None = None
+    muon_parameters_filter: str | None = None
+
+    def create_optimizer(
+        self, named_parameters
+    ) -> tuple[torch.optim.Optimizer, dict[str, object]]:
+        match self.optimizer_type:
+            case "muon_with_adam" | "muon_with_adam_adam":
+                def create_param(name: str, parameters: torch.Tensor):
+                    assert self.muon_parameters_filter
+                    assert self.muon_optimizer_configuration
+                    if (
+                        re.findall(self.muon_parameters_filter, name)
+                        and self.optimizer_type == "muon_with_adam"
+                    ):
+                        return dict(
+                            use_muon=True,
+                            lr=self.muon_optimizer_configuration.lr,
+                            momentum=self.muon_optimizer_configuration.momentum,
+                            weight_decay=self.muon_optimizer_configuration.weight_decay,
+                            params=parameters,
+                        )
+                    else:
+                        return dict(
+                            use_muon=False,
+                            lr=self.adamw_optimizer_configuration.lr,
+                            betas=self.adamw_optimizer_configuration.betas,
+                            weight_decay=self.adamw_optimizer_configuration.weight_decay,
+                            eps=1e-5,
+                            params=parameters
+                        )
+
+                parameters = [
+                    create_param(name, value)
+                    for name, value in named_parameters
+                ]
+                exclude_keys_for_logging = {"params"}
+                parameters_for_logging = [
+                    {k: v for k, v in p.items() if k not in exclude_keys_for_logging}
+                    for p in parameters
+                ]
+                return muon.SingleDeviceMuonWithAuxAdam(parameters), {
+                    "params": parameters_for_logging
+                }
+            case "torch_adamw":
+                adam_optimizer_configuration = self.adamw_optimizer_configuration
+                assert len(adam_optimizer_configuration.betas) == 2
+                return torch_adamw.AdamW(
+                    named_parameters.values(),
+                    lr=adam_optimizer_configuration.lr,
+                    betas=(
+                        adam_optimizer_configuration.betas[0],
+                        adam_optimizer_configuration.betas[1],
+                    ),
+                    eps=adam_optimizer_configuration.eps,
+                    weight_decay=adam_optimizer_configuration.weight_decay,
+                ), {}
+            case None:
+                adam_optimizer_configuration = self.adamw_optimizer_configuration
+                assert len(adam_optimizer_configuration.betas) == 2
+                return (
+                    adam_w.AdamW(
+                        named_parameters.values(),
+                        lr=adam_optimizer_configuration.lr,
+                        weight_decay=adam_optimizer_configuration.weight_decay,
+                        betas=(
+                            adam_optimizer_configuration.betas[0],
+                            adam_optimizer_configuration.betas[1],
+                        ),
+                        eps=adam_optimizer_configuration.eps,
+                    ),
+                    {},
+                )
+            case _:
+                raise Exception("Unknown optimizer type")
+
+        return
 
     @classmethod
     def from_dict(cls, object: dict) -> "LlmPretrainingTrainingLoopConfiguration":
-        pretraining_configuration: LlmPretrainingTrainingLoopConfiguration = serialization.from_dict(cls, object)
+        pretraining_configuration: LlmPretrainingTrainingLoopConfiguration = (
+            serialization.from_dict(cls, object)
+        )
         return extensions.replace_recursively(
             pretraining_configuration,
             lambda x: x.transformer_llm,

@@ -29,30 +29,17 @@ RUN groupadd --gid 1000 vscode \
 # Install uv - the fast Python package installer
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Set environment variables for uv
-ENV UV_CACHE_DIR=/opt/uv-cache
-ENV UV_PYTHON_PREFERENCE=only-managed
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Create cache directory and virtual environment directory
-RUN mkdir -p /opt/uv-cache /opt/venv && chown -R vscode:vscode /opt/uv-cache /opt/venv
-
 # Install NVIDIA Container Toolkit requirements (runtime support)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
+# Set environment variables for uv
+ENV UV_PYTHON_PREFERENCE=only-managed
+
 # Switch to vscode user
 USER vscode
 WORKDIR /workspace
-
-# Create virtual environment
-RUN python3 -m venv /opt/venv
-
-# Upgrade pip and install torch with CUDA support
-RUN /opt/venv/bin/pip install --upgrade pip && \
-    /opt/venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 RUN echo '. ./scripts/register_commands.sh' >> /home/vscode/.bashrc
 
