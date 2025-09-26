@@ -228,6 +228,7 @@ class LlmPretrainingTrainingLoopConfiguration:
                             momentum=self.muon_optimizer_configuration.momentum,
                             weight_decay=self.muon_optimizer_configuration.weight_decay,
                             params=parameters,
+                            name=name
                         )
                     else:
                         return dict(
@@ -236,7 +237,8 @@ class LlmPretrainingTrainingLoopConfiguration:
                             betas=self.adamw_optimizer_configuration.betas,
                             weight_decay=self.adamw_optimizer_configuration.weight_decay,
                             eps=1e-5,
-                            params=parameters
+                            params=parameters,
+                            name=name
                         )
 
                 parameters = [
