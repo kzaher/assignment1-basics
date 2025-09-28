@@ -270,7 +270,7 @@ function down() {
 }
 
 function up_jozo() {
-  ssh k@raspberrypi.tailb3978.ts.net bash -c "wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo;"
+  ssh k@raspberrypi.tailb3978.ts.net bash -c "'for i in {1..20} ; do wake_jozo; done;'"
   ssh k@raspberrypi.tailb3978.ts.net ping 100.110.214.59
 }
 

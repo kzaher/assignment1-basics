@@ -24,6 +24,7 @@ from numpy.lib.format import open_memmap
 import gc
 import json
 import pandas as pd
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -387,6 +388,24 @@ class Pretrainer:
             context_size_multipler * context_increment,
         )
 
+    def _stop_layer_index(self):
+        layer_increment = (
+            self._configuration.training_loop.transformer_llm.experiments.layer_increment
+        )
+        if not layer_increment:
+            return 0
+        
+        n_increments = math.ceil(
+            self._configuration.training_loop.transformer_llm.num_layers
+            / layer_increment
+        )
+
+        return (
+            self._i * n_increments / self._configuration.training_loop.max_iterations
+            + 1
+        ) * layer_increment
+
+
     def _run_training_loop(self, tokenized_training_data, tokenized_validation_data):
         cross_entropy_loss = cross_entropy.CrossEntropyLoss()
         total_gradient_value = 1e6
@@ -397,7 +416,9 @@ class Pretrainer:
         while True:
             start = time.time()
             with activation_recorder.intercept_activations(
-                intercept=self._i % (self._configuration.training_loop.checkpoint_persist_modulus) == 0
+                intercept=self._i
+                % (self._configuration.training_loop.checkpoint_persist_modulus)
+                == 0
             ) as recorder:
                 self._optimizer.zero_grad()
                 annealing_logs = self._set_annealed_learning_rate()
@@ -408,13 +429,13 @@ class Pretrainer:
                     context_length=context_size,
                     device=self._configuration.training_loop.transformer_llm.device,
                 )
-                ys = self._model(training_batch.to(torch.int64))
+                ys = self._model(training_batch.to(torch.int64), stop_layer_index=self._stop_layer_index())
                 batch_size_times_context_size = ys.size(-2) * ys.size(-3)
                 loss = cross_entropy_loss(
                     ys,
                     target=target.to(torch.int64).to(
                         device=self._configuration.training_loop.transformer_llm.device,
-                    )
+                    ),
                 )
                 loss.backward()
                 (clipped_gradients, total_gradient_value) = (
@@ -442,14 +463,15 @@ class Pretrainer:
                     )
                     with torch.no_grad():
                         validation_loss = cross_entropy_loss(
-                            self._uncompiled_model(validation_batch.to(torch.int64)),
+                            self._uncompiled_model(validation_batch.to(torch.int64), stop_layer_index=self._stop_layer_index()),
                             target=validation_target.to(torch.int64).to(
                                 device=self._configuration.training_loop.transformer_llm.device,
-                            )
+                            ),
                         )
                     log_args |= {
                         "health/checkpoint_save_time": time.time() - start_save,
-                        "metrics/loss/validation": validation_loss.item() / batch_size_times_context_size,
+                        "metrics/loss/validation": validation_loss.item()
+                        / batch_size_times_context_size,
                     }
                     gc.collect()
                     torch.cuda.empty_cache()
@@ -478,7 +500,8 @@ class Pretrainer:
                 wandb.log(
                     log_args
                     | {
-                        "metrics/loss/training": loss.item() / batch_size_times_context_size,
+                        "metrics/loss/training": loss.item()
+                        / batch_size_times_context_size,
                         "health/i": self._i,
                         "health/step_time": time.time() - start,
                         "health/gradient/clipping": int(clipped_gradients),

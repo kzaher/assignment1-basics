@@ -49,10 +49,13 @@ class TransformerLm(nn.Module):
         self,
         in_indices: Int[Tensor, "...  batch_size sequence_length"],
         token_positions: Int[Tensor, "...  batch_size sequence_length"] | None = None,
+        stop_layer_index: int = 0
     ) -> Float[Tensor, "... batch_size sequence_length vocab_size"]:
         propagate: Float[Tensor, "... batch_size sequence_length d_model"] = (
             self.token_embeddings(in_indices)
         )
-        for layer in self.layers:
+        for layer_index, layer in enumerate(self.layers):
+            if stop_layer_index > 0 and layer_index >= stop_layer_index:
+                break
             propagate = layer(propagate, token_positions=token_positions)
         return self.lm_head(self.ln_final(propagate))

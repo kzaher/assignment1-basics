@@ -16,15 +16,15 @@ sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretrain
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_10MB.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json --checkpoint=0 ;
 sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_10k.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 ;
 
-sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_2B.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_2B.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0
 
-sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0 
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff.json  --checkpoint=0
 
-sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_batch.json  --checkpoint=0 
+sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_batch.json  --checkpoint=0
 
 uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_learning_rate.json  --checkpoint=0
 
-RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json"
+RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --exp_path=cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
 pushrun podscreen bash -c  "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && down"
 """
 
@@ -37,16 +37,30 @@ import extensions
 import dataclasses
 import logging
 import pandas as pd
+import subprocess
 
 extensions.setup_default_logging()
 
 
-def run_configuration(configuration_instance: configuration.PretrainingConfiguration, dry_run: bool):
+def run_configuration(
+    configuration_instance: configuration.PretrainingConfiguration, dry_run: bool
+):
     if dry_run:
         return
     pretrainer_engine = pretrainer.Pretrainer(configuration=configuration_instance)
     pretrainer_engine.load_latest_checkpoint()
     pretrainer_engine.train()
+
+
+def get_file_from_git_head(filepath: str) -> str:
+    result = subprocess.run(
+        ["git", "show", f"HEAD:{filepath}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+        text=True,
+    )
+    return result.stdout
 
 
 def main(argv: abc.Sequence[str]):
@@ -68,7 +82,14 @@ def main(argv: abc.Sequence[str]):
         type=str,
         required=False,
         default=None,
-        help="Output directory path",
+        help="Meta parameters batch",
+    )
+    parser.add_argument(
+        "--exp_path",
+        type=str,
+        required=False,
+        default=None,
+        help="Experiment changes",
     )
     parser.add_argument(
         "--dry_run",
@@ -103,17 +124,21 @@ def main(argv: abc.Sequence[str]):
         def update_configuration(paths: list[str], values: list[object]):
             assert len(paths) == len(values)
             c = configuration_instance
+
             def trimm(path: str):
-                if '.' in path:
-                    return path.split('.')[-1]
+                if "." in path:
+                    return path.split(".")[-1]
                 return path
+
             compressed_paths = [trimm(p) for p in paths]
             c = extensions.replace_recursively(
                 c,
                 lambda x: x.training_loop.name,
                 f'{c.training_loop.name}.{",".join(compressed_paths)}',
             )
-            suffix = ",".join([f"{path}={value}" for path, value in zip(compressed_paths, values)])
+            suffix = ",".join(
+                [f"{path}={value}" for path, value in zip(compressed_paths, values)]
+            )
             c = dataclasses.replace(c, suffix=suffix)
             for path, value in zip(paths, values):
                 c = extensions.replace_recursively(
@@ -132,7 +157,9 @@ def main(argv: abc.Sequence[str]):
                         "value": override_value,
                     }
                     for parameter_override in parameter_sweep_configuration.values
-                    for parameter_index, override_value in enumerate(parameter_override.values)
+                    for parameter_index, override_value in enumerate(
+                        parameter_override.values
+                    )
                 ]
             )
             .groupby("i")
@@ -151,11 +178,40 @@ def main(argv: abc.Sequence[str]):
             )
             logging.info(
                 "modified_configuration=%s",
-                json.dumps(dataclasses.asdict(mutated_configuration), indent=4, default=str),
+                json.dumps(
+                    dataclasses.asdict(mutated_configuration), indent=4, default=str
+                ),
             )
             run_configuration(mutated_configuration, dry_run=args.dry_run)
+    if exp_path := args.exp_path:
+        with open(exp_path, "rt") as f:
+            exp_configuration_instance = configuration.PretrainingConfiguration(
+                output_path=args.output_path,
+                checkpoint=args.checkpoint,
+                training_loop=configuration.LlmPretrainingTrainingLoopConfiguration.from_dict(
+                    json.load(f)
+                ),
+            )
+        exp_configuration_instance = dataclasses.replace(
+            exp_configuration_instance,
+            suffix=extensions.json_diff_as_csv(
+                dataclasses.asdict(configuration_instance),
+                dataclasses.asdict(exp_configuration_instance),
+            ),
+        )
+        logging.info(
+            "exp_configuration=%s",
+            json.dumps(
+                dataclasses.asdict(exp_configuration_instance), indent=4, default=str
+            ),
+        )
+        run_configuration(
+            configuration_instance=exp_configuration_instance, dry_run=args.dry_run
+        )
     else:
-        run_configuration(configuration_instance=configuration_instance, dry_run=args.dry_run)
+        run_configuration(
+            configuration_instance=configuration_instance, dry_run=args.dry_run
+        )
 
 
 if __name__ == "__main__":

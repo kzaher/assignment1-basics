@@ -57,6 +57,7 @@ class ArchitectureExperiments:
     activation: str | None = None
     zero_output: bool | None = None
     context_increment: int | None = None
+    layer_increment: bool = False
 
     def create_final_normalization_layer(
         self, d_model: int, device: str, dtype: torch.dtype | None
