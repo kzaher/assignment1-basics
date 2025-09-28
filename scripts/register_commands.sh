@@ -8,7 +8,7 @@ DEBUG_SCRIPT=${DEBUG_SCRIPT:-0}
 
 function load_runpod_env() {
   # Check if all required variables are already set
-  if [[ -n "$RP_IP" && -n "$RP_SSH_PORT" && -n "$POD_ID" ]]; then
+  if [[ -n "$RP_IP" && -n "$RP_SSH_PORT" && -n "$POD_ID" && "$RP_SSH_PORT_POD_ID" == "$POD_ID" ]]; then
     # Variables already loaded, just export them to ensure they're available
     export RP_IP RP_SSH_PORT POD_ID
     if [[ ${DEBUG_SCRIPT} -ge 1 ]]; then
@@ -25,6 +25,7 @@ function load_runpod_env() {
     env_vars=$(echo "$all_output" | grep -E "^(RP_IP|RP_SSH_PORT|POD_ID)=")
     eval "$env_vars"
     # Export the variables so they're cached and available to child processes
+    export RP_SSH_PORT_POD_ID="${POD_ID}"
     export RP_IP RP_SSH_PORT POD_ID
     return 0
   else
@@ -157,7 +158,7 @@ function run() {
 function push_jozo() {
   . ./scripts/rsync.sh
   # Use -l to preserve symbolic links for jozo
-  RSYNC_EXTRA_FLAGS="" RSYNC_RSH="ssh -i ~/.ssh/id_jozo" rsync_default --exclude 'data/' --rsync-path="wsl rsync" . kruno@${SSH_HOSTNAME:-jozo.tailb3978.ts.net}:/mnt/c/p/assignment1-basics/
+  RSYNC_EXTRA_FLAGS="" RSYNC_RSH="ssh -i ~/.ssh/id_jozo" rsync_default --exclude 'data/' --exclude='*.toml' --exclude='*.lock' --rsync-path="wsl rsync" . kruno@${SSH_HOSTNAME:-jozo.tailb3978.ts.net}:/mnt/c/p/assignment1-basics/
 }
 function push_jozodoc() {
   push_jozo
@@ -269,11 +270,8 @@ function down() {
 }
 
 function up_jozo() {
-  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
-  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
-  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
-  ssh k@raspberrypi.tailb3978.ts.net wake_jozo
-  ssh k@raspberrypi.tailb3978.ts.net ping jozo
+  ssh k@raspberrypi.tailb3978.ts.net bash -c "wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo; wake_jozo;"
+  ssh k@raspberrypi.tailb3978.ts.net ping 100.110.214.59
 }
 
 function up_pod() {
@@ -329,6 +327,14 @@ function down_this() {
       echo "This survived" >&2
       return 1
     fi
+}
+
+function reset_jozo() {
+  ssh k@raspberrypi.tailb3978.ts.net ./reset_jozo.py
+}
+
+function reset() {
+  dispatch_to_target "reset" "$@"
 }
 
 export -f down

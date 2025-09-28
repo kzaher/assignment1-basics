@@ -13,8 +13,8 @@ class AdamW(torch.optim.Optimizer):
         eps: float,
     ):
         defaults = {"lr": lr, "weight_decay": weight_decay, "betas": betas, "eps": eps}
-        assert lr > 0
-        assert weight_decay > 0
+        assert lr >= 0
+        assert weight_decay >= 0
         assert eps > 0
         assert betas[0] > 0
         assert betas[1] > 0

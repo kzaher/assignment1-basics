@@ -11,7 +11,7 @@ class CrossEntropyLoss(nn.Module):
     def forward(
         self,
         o: Float[Tensor, "... batch seq_length vocab_size"],
-        target: Int[Tensor, "... batch seq_length"],
+        target: Int[Tensor, "... batch seq_length"]
     ) -> Float[Tensor, "..."]:
         normalized_o: Float[Tensor, "... batch seq_length vocab_size"] = (
             o - torch.max(o, dim=-1, keepdim=True).values
@@ -22,4 +22,4 @@ class CrossEntropyLoss(nn.Module):
           ),
           dim=-1,
         ) + torch.log(torch.sum(torch.exp(normalized_o), dim=-1))
-        return loss.sum(-1).sum(-1) / (loss.size(-1) * loss.size(-2))
+        return loss.sum(-1).sum(-1)

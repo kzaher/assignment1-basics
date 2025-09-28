@@ -18,6 +18,7 @@ class ActivatedLu(nn.Module):
         d_ff: int,
         use_bias: bool,
         activation: nn.Module,
+        zero_output: bool,
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
     ):
@@ -44,6 +45,9 @@ class ActivatedLu(nn.Module):
             dtype=dtype,
         )
         self.activation_name = type(activation).__name__
+
+        if zero_output:
+            self.w2.weight.detach().zero_()
         setattr(self, self.activation_name, activation)
 
     def forward(

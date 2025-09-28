@@ -20,7 +20,7 @@ import torch
 
 @dataclasses.dataclass(frozen=True)
 class AdamWOptimizerConfiguration:
-    lr: float
+    # lr: float
     weight_decay: float
     betas: list[float]
     eps: float
@@ -40,6 +40,10 @@ class AnnealingConfiguration:
     use_cosine_rampup: bool
     max_learning_rate: float
     min_learning_rate: float
+    ff_max_learning_rate: float
+    ff_min_learning_rate: float
+    safe_max_learning_rate: float
+    safe_min_learning_rate: float
     cosine_cycle_iters: int
 
 
@@ -51,8 +55,8 @@ class ArchitectureExperiments:
     ff_relu_squeeze_factor: float | None = None
     ff_relu_min: float | None = None
     activation: str | None = None
-    input_gradient_guard: float | None = None
-    output_gradient_guard: float | None = None
+    zero_output: bool | None = None
+    context_increment: int | None = None
 
     def create_final_normalization_layer(
         self, d_model: int, device: str, dtype: torch.dtype | None
@@ -100,47 +104,8 @@ class ArchitectureExperiments:
                     use_bias=use_bias,
                     device=device,
                     dtype=dtype,
+                    zero_output=self.zero_output or False,
                     activation=nonlinear.Swish(),
-                )
-            case "silu":
-                return nonlinear.SiLU()
-            case "relu_soft":
-                assert self.ff_relu_squeeze_factor
-                assert self.ff_relu_min
-                return nonlinear.ReluSoft(
-                    d_model=d_model,
-                    d_ff=d_hidden,
-                    squeeze_factor=self.ff_relu_squeeze_factor,
-                    min_gradient=self.ff_relu_min,
-                    use_bias=use_bias,
-                    device=device,
-                    dtype=dtype,
-                )
-            case "parabola":
-                return parabola.ParabolaGlu(
-                    d_model=d_model,
-                    use_bias=use_bias,
-                    d_ff=d_hidden,
-                    device=device,
-                    dtype=dtype,
-                )
-            case "parabola_raised":
-                return parabola.ParabolaGlu(
-                    d_model=d_model,
-                    use_bias=use_bias,
-                    d_ff=d_hidden,
-                    device=device,
-                    dtype=dtype,
-                    y_offset=1.0,
-                )
-            case "parabola_lowered":
-                return parabola.ParabolaGlu(
-                    d_model=d_model,
-                    use_bias=use_bias,
-                    d_ff=d_hidden,
-                    device=device,
-                    dtype=dtype,
-                    y_offset=-1.0,
                 )
             case "silu_monotonic_lu":
                 return nonlinear.ActivatedLu(
@@ -149,6 +114,7 @@ class ArchitectureExperiments:
                     use_bias=use_bias,
                     device=device,
                     dtype=dtype,
+                    zero_output=self.zero_output or False,
                     activation=silu_monotonic.SiLUELUMonotonic(),
                 )
             case "silu_relu":
@@ -158,6 +124,7 @@ class ArchitectureExperiments:
                     use_bias=use_bias,
                     device=device,
                     dtype=dtype,
+                    zero_output=self.zero_output or False,
                     activation=silu_monotonic.SiLUReluMonotonic(),
                 )
             case "relu":
@@ -167,6 +134,7 @@ class ArchitectureExperiments:
                     use_bias=use_bias,
                     device=device,
                     dtype=dtype,
+                    zero_output=self.zero_output or False,
                     activation=torch.nn.ReLU(),
                 )
             case _:
@@ -204,75 +172,83 @@ class LlmPretrainingTrainingLoopConfiguration:
     batch_size: int
     context_length: int
     initial_max_l2_norm: float
-    max_iterations: int | None = None
+    max_iterations: int
     time_limit_in_seconds: int | None = None
     write_checkpoint: bool = False
     optimizer_type: str | None = None
-    muon_parameters_filter: str | None = None
 
     def create_optimizer(
         self, named_parameters
     ) -> tuple[torch.optim.Optimizer, dict[str, object]]:
-        match self.optimizer_type:
-            case "muon_with_adam" | "muon_with_adam_adam":
-                def create_param(name: str, parameters: torch.Tensor):
-                    assert self.muon_parameters_filter
-                    assert self.muon_optimizer_configuration
-                    if (
-                        re.findall(self.muon_parameters_filter, name)
-                        and self.optimizer_type == "muon_with_adam"
-                    ):
-                        return dict(
-                            use_muon=True,
-                            lr=self.muon_optimizer_configuration.lr,
-                            momentum=self.muon_optimizer_configuration.momentum,
-                            weight_decay=self.muon_optimizer_configuration.weight_decay,
-                            params=parameters,
-                            name=name
-                        )
-                    else:
-                        return dict(
-                            use_muon=False,
-                            lr=self.adamw_optimizer_configuration.lr,
-                            betas=self.adamw_optimizer_configuration.betas,
-                            weight_decay=self.adamw_optimizer_configuration.weight_decay,
-                            eps=1e-5,
-                            params=parameters,
-                            name=name
-                        )
+        def create_param(name: str, parameters: torch.Tensor):
+            assert self.muon_optimizer_configuration
+            is_feed_forward = bool(re.findall("\\.ffn\\.", name))
+            if is_feed_forward and self.optimizer_type in {
+                "muon_with_adam",
+                "muon_with_adam_adam_switch",
+            }:
+                return dict(
+                    use_muon=True,
+                    is_ff=is_feed_forward,
+                    lr=self.muon_optimizer_configuration.lr,
+                    momentum=self.muon_optimizer_configuration.momentum,
+                    betas=self.adamw_optimizer_configuration.betas,
+                    weight_decay=self.muon_optimizer_configuration.weight_decay,
+                    eps=1e-5,
+                    params=parameters,
+                    name=name,
+                )
+            else:
+                return dict(
+                    use_muon=False,
+                    is_ff=False,
+                    lr=0,  # self.adamw_optimizer_configuration.lr,
+                    betas=self.adamw_optimizer_configuration.betas,
+                    weight_decay=self.adamw_optimizer_configuration.weight_decay,
+                    eps=1e-5,
+                    params=parameters,
+                    name=name,
+                )
 
-                parameters = [
-                    create_param(name, value)
-                    for name, value in named_parameters
-                ]
-                exclude_keys_for_logging = {"params"}
-                parameters_for_logging = [
-                    {k: v for k, v in p.items() if k not in exclude_keys_for_logging}
-                    for p in parameters
-                ]
-                return muon.SingleDeviceMuonWithAuxAdam(parameters), {
-                    "params": parameters_for_logging
-                }
+        parameters = [create_param(name, value) for name, value in named_parameters]
+        exclude_keys_for_logging = {"params"}
+        parameters_for_logging = {
+            "params": [
+                {k: v for k, v in p.items() if k not in exclude_keys_for_logging}
+                for p in parameters
+            ]
+        }
+        match self.optimizer_type:
+            case (
+                "muon_with_adam" | "muon_with_adam_adam" | "muon_with_adam_adam_switch"
+            ):
+                return (
+                    muon.SingleDeviceMuonWithAuxAdam(parameters),
+                    parameters_for_logging,
+                )
             case "torch_adamw":
                 adam_optimizer_configuration = self.adamw_optimizer_configuration
                 assert len(adam_optimizer_configuration.betas) == 2
-                return torch_adamw.AdamW(
-                    named_parameters.values(),
-                    lr=adam_optimizer_configuration.lr,
-                    betas=(
-                        adam_optimizer_configuration.betas[0],
-                        adam_optimizer_configuration.betas[1],
+                return (
+                    torch_adamw.AdamW(
+                        parameters,
+                        lr=0,  # annealing will set it
+                        betas=(
+                            adam_optimizer_configuration.betas[0],
+                            adam_optimizer_configuration.betas[1],
+                        ),
+                        eps=adam_optimizer_configuration.eps,
+                        weight_decay=adam_optimizer_configuration.weight_decay,
                     ),
-                    eps=adam_optimizer_configuration.eps,
-                    weight_decay=adam_optimizer_configuration.weight_decay,
-                ), {}
+                    parameters_for_logging,
+                )
             case None:
                 adam_optimizer_configuration = self.adamw_optimizer_configuration
                 assert len(adam_optimizer_configuration.betas) == 2
                 return (
                     adam_w.AdamW(
-                        named_parameters.values(),
-                        lr=adam_optimizer_configuration.lr,
+                        parameters,
+                        lr=0,  # annealing
                         weight_decay=adam_optimizer_configuration.weight_decay,
                         betas=(
                             adam_optimizer_configuration.betas[0],
@@ -280,7 +256,7 @@ class LlmPretrainingTrainingLoopConfiguration:
                         ),
                         eps=adam_optimizer_configuration.eps,
                     ),
-                    {},
+                    parameters_for_logging,
                 )
             case _:
                 raise Exception("Unknown optimizer type")

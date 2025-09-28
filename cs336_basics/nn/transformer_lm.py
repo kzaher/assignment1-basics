@@ -42,6 +42,8 @@ class TransformerLm(nn.Module):
             device=device,
             dtype=dtype,
         )
+        if configuration.experiments.zero_output:
+            self.lm_head.weight.detach().zero_()
 
     def forward(
         self,

@@ -61,6 +61,9 @@ class MultiHeadSelfAttention(nn.Module):
             dtype=dtype,
         )
 
+        if experiments.zero_output:
+            self.output_proj.weight.detach().zero_()
+
     def forward(
         self,
         x: Float[Tensor, "... sequence_length d_model"],

@@ -38,13 +38,17 @@ class Pretrainer:
         self._i = 0
         model = transformer_lm.TransformerLm(lm_configuration)
         model.register_buffer("start_time", torch.tensor(time.time()))
-        
+
         # Keep uncompiled model for validation to avoid cache invalidation
         self._uncompiled_model = model
-        
+
         # Compile the model with optimizations for training
         self._model = torch.compile(model, mode="default")
-        self._optimizer, self._optimizer_configuration = self._configuration.training_loop.create_optimizer(self._model.named_parameters())
+        self._optimizer, self._optimizer_configuration = (
+            self._configuration.training_loop.create_optimizer(
+                self._model.named_parameters()
+            )
+        )
         self._run_id: str | None = None
 
     def _checkpoint_exists(self, i: int) -> str | None:
@@ -105,7 +109,7 @@ class Pretrainer:
         with open(self._configuration.checkpoint_written_path(self._i), "wb") as f:
             pass
 
-    def _set_annealed_learning_rate(self):
+    def _set_annealed_learning_rate(self) -> dict[str, float]:
         annealing_configuration = (
             self._configuration.training_loop.annealing_configuration
         )
@@ -122,8 +126,70 @@ class Pretrainer:
                 else False
             ),
         )
+        ff_non_muon_lr = extensions.cosine_learning_rate(
+            it=self._i,
+            zero_iters=annealing_configuration.zero_iters,
+            max_learning_rate=annealing_configuration.ff_max_learning_rate,
+            min_learning_rate=annealing_configuration.ff_min_learning_rate,
+            warmup_iters=annealing_configuration.warmup_iters,
+            cosine_cycle_iters=annealing_configuration.cosine_cycle_iters,
+            use_cosine_rampup=(
+                annealing_configuration.use_cosine_rampup
+                if annealing_configuration.use_cosine_rampup is not None
+                else False
+            ),
+        )
+        safe_lr = extensions.cosine_learning_rate(
+            it=self._i,
+            zero_iters=annealing_configuration.zero_iters,
+            max_learning_rate=annealing_configuration.safe_max_learning_rate,
+            min_learning_rate=annealing_configuration.safe_min_learning_rate,
+            warmup_iters=annealing_configuration.warmup_iters,
+            cosine_cycle_iters=annealing_configuration.cosine_cycle_iters,
+            use_cosine_rampup=(
+                annealing_configuration.use_cosine_rampup
+                if annealing_configuration.use_cosine_rampup is not None
+                else False
+            ),
+        )
+        applied_muon_count = 0.0
+        applied_adam_count = 0.0
+        applied_ff_non_muon_count = 0.0
+        applied_safe_count = 0.0
+        muon_lr = self._configuration.training_loop.muon_optimizer_configuration.lr
+
+        def get_lr(pg):
+            use_muon = pg.get("use_muon", False)
+            if use_muon:
+                nonlocal applied_muon_count
+                applied_muon_count += 1
+                return muon_lr
+            else:
+                if pg.get("use_safe", False):
+                    nonlocal applied_safe_count
+                    applied_safe_count += 1
+                    return safe_lr
+                if pg["is_ff"]:
+                    nonlocal applied_ff_non_muon_count
+                    applied_ff_non_muon_count += 1
+                    return ff_non_muon_lr
+                else:
+                    nonlocal applied_adam_count
+                    applied_adam_count += 1
+                    return cosine_lr
+
         for pg in self._optimizer.param_groups:
-            pg["lr"] = cosine_lr
+            pg["lr"] = get_lr(pg)
+        return {
+            "health/cosine_learning_rate_adam": cosine_lr,
+            "health/cosine_learning_rate_adam/count": applied_adam_count,
+            "health/cosine_learning_rate_muon": muon_lr,
+            "health/cosine_learning_rate_muon/count": applied_muon_count,
+            "health/cosine_learning_rate_ff_adam": ff_non_muon_lr,
+            "health/cosine_learning_rate_ff_adam/count": applied_ff_non_muon_count,
+            "health/cosine_learning_rate_safe_adam": safe_lr,
+            "health/cosine_learning_rate_safe_adam/count": applied_safe_count,
+        }
 
     def train_tokenizer(self):
         vocabulary, merges = train_bpe(
@@ -282,9 +348,6 @@ class Pretrainer:
             self._configuration.tokenized_validation_data_path, mmap_mode="r"
         )
 
-    def get_lrs(self):
-        return set([pg["lr"] for pg in self._optimizer.param_groups])
-
     def should_stop(self):
         return (
             self._configuration.training_loop.max_iterations
@@ -293,6 +356,35 @@ class Pretrainer:
             self._configuration.training_loop.time_limit_in_seconds
             and (time.time() - self._model.start_time.item())
             > self._configuration.training_loop.time_limit_in_seconds
+        )
+
+    def _get_batch_context_size(self):
+        context_increment = (
+            self._configuration.training_loop.transformer_llm.experiments.context_increment
+        )
+        if context_increment is None:
+            return (
+                self._configuration.training_loop.batch_size,
+                self._configuration.training_loop.context_length,
+            )
+
+        n_context_steps = (
+            self._configuration.training_loop.context_length // context_increment
+        )
+
+        iter_block_size = (
+            self._configuration.training_loop.max_iterations // n_context_steps
+        )
+
+        context_size_multipler = min(
+            ((self._i // iter_block_size) + 1), n_context_steps
+        )
+
+        return (
+            self._configuration.training_loop.batch_size
+            * n_context_steps
+            // context_size_multipler,
+            context_size_multipler * context_increment,
         )
 
     def _run_training_loop(self, tokenized_training_data, tokenized_validation_data):
@@ -305,21 +397,24 @@ class Pretrainer:
         while True:
             start = time.time()
             with activation_recorder.intercept_activations(
-                intercept=self._i % 50 == 0
+                intercept=self._i % (self._configuration.training_loop.checkpoint_persist_modulus) == 0
             ) as recorder:
                 self._optimizer.zero_grad()
-                self._set_annealed_learning_rate()
+                annealing_logs = self._set_annealed_learning_rate()
+                batch_size, context_size = self._get_batch_context_size()
                 (training_batch, target) = extensions.get_batch(
                     tokenized_training_data,
-                    batch_size=self._configuration.training_loop.batch_size,
-                    context_length=self._configuration.training_loop.context_length,
+                    batch_size=batch_size,
+                    context_length=context_size,
                     device=self._configuration.training_loop.transformer_llm.device,
                 )
+                ys = self._model(training_batch.to(torch.int64))
+                batch_size_times_context_size = ys.size(-2) * ys.size(-3)
                 loss = cross_entropy_loss(
-                    self._model(training_batch.to(torch.int64)),
+                    ys,
                     target=target.to(torch.int64).to(
                         device=self._configuration.training_loop.transformer_llm.device,
-                    ),
+                    )
                 )
                 loss.backward()
                 (clipped_gradients, total_gradient_value) = (
@@ -341,8 +436,8 @@ class Pretrainer:
                     self._persist_checkpoint()
                     (validation_batch, validation_target) = extensions.get_batch(
                         tokenized_validation_data,
-                        batch_size=self._configuration.training_loop.batch_size,
-                        context_length=self._configuration.training_loop.context_length,
+                        batch_size=batch_size,
+                        context_length=context_size,
                         device=self._configuration.training_loop.transformer_llm.device,
                     )
                     with torch.no_grad():
@@ -350,11 +445,11 @@ class Pretrainer:
                             self._uncompiled_model(validation_batch.to(torch.int64)),
                             target=validation_target.to(torch.int64).to(
                                 device=self._configuration.training_loop.transformer_llm.device,
-                            ),
+                            )
                         )
                     log_args |= {
                         "health/checkpoint_save_time": time.time() - start_save,
-                        "metrics/loss/validation": validation_loss.item(),
+                        "metrics/loss/validation": validation_loss.item() / batch_size_times_context_size,
                     }
                     gc.collect()
                     torch.cuda.empty_cache()
@@ -369,16 +464,29 @@ class Pretrainer:
                     )
                     gc.collect()
                     # torch.cuda.empty_cache()
+
+                if False:
+                    if (
+                        self._configuration.training_loop.optimizer_type
+                        == "muon_with_adam_adam_switch"
+                        and loss.item() < 6.3
+                    ):
+                        for pg in self._optimizer.param_groups:
+                            pg["use_muon"] = False
+                            pg["use_safe"] = True
+
                 wandb.log(
                     log_args
                     | {
-                        "metrics/loss/training": loss.item(),
-                        "metrics/lr0": list(self.get_lrs())[0],
+                        "metrics/loss/training": loss.item() / batch_size_times_context_size,
                         "health/i": self._i,
                         "health/step_time": time.time() - start,
                         "health/gradient/clipping": int(clipped_gradients),
                         "health/gradient/value": total_gradient_value,
+                        "health/batch/size": batch_size,
+                        "health/context/size": context_size,
                     }
+                    | annealing_logs
                 )
                 if should_stop:
                     logging.info(
@@ -390,7 +498,7 @@ class Pretrainer:
         if self.should_stop():
             logger.info("Stop conditions are met.")
             return
-        
+
         count_parameters = pd.DataFrame(
             [
                 {"name": name, "params": param.numel()}
@@ -398,20 +506,26 @@ class Pretrainer:
             ]
         )
         with pd.option_context(
-            "display.max_rows", None,
-            "display.max_columns", None,
-            "display.width", None,
-            "display.max_colwidth", None
+            "display.max_rows",
+            None,
+            "display.max_columns",
+            None,
+            "display.width",
+            None,
+            "display.max_colwidth",
+            None,
         ):
-            print(f"# Params\n{count_parameters}")
+            logger.info("# Params\n%s", count_parameters)
         total_params = count_parameters["params"].sum()
-        print(f'# Total params: {total_params:,}')
+        logger.info("# Total params: %s", total_params)
 
         os.makedirs(self._configuration.output_path, exist_ok=True)
         os.makedirs(self._configuration.checkpoint_dir, exist_ok=True)
 
         with open(self._configuration.output_metadata_path, "wt") as f:
-            json.dump(dataclasses.asdict(self._configuration), f, default=lambda x: None)
+            json.dump(
+                dataclasses.asdict(self._configuration), f, default=lambda x: None
+            )
 
         tokenized_training_data = self.get_tokenized_training_data()
         tokenized_validation_data = self.get_tokenized_validation_data()
@@ -431,18 +545,24 @@ class Pretrainer:
             project=self._configuration.training_loop.name,
             # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
             name=f"{self._configuration.suffix or 'experiment'} {datetime.datetime.fromtimestamp(self._model.start_time.item(), datetime.timezone.utc)} timestamp={self._model.start_time.item()}",
-            config=dataclasses.asdict(self._configuration) | {'total_params': total_params} | self._optimizer_configuration,
+            config=dataclasses.asdict(self._configuration)
+            | {"total_params": total_params}
+            | self._optimizer_configuration,
             **wandb_kw_args,
         ) as run:
             self._run_id = run.id
-            
+
             # Print clean, unescaped URLs for better readability
             project_name = self._configuration.training_loop.name
             run_id = run.id
             logger.info(f"🚀 Clean W&B URLs:")
-            logger.info(f"   Project: https://wandb.ai/ante-materija-gmbh/{project_name}")
-            logger.info(f"   Run: https://wandb.ai/ante-materija-gmbh/{project_name}/runs/{run_id}")
-            
+            logger.info(
+                f"   Project: https://wandb.ai/ante-materija-gmbh/{project_name}"
+            )
+            logger.info(
+                f"   Run: https://wandb.ai/ante-materija-gmbh/{project_name}/runs/{run_id}"
+            )
+
             self._run_training_loop(
                 tokenized_training_data=tokenized_training_data,
                 tokenized_validation_data=tokenized_validation_data,

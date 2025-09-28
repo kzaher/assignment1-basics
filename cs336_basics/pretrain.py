@@ -24,9 +24,8 @@ sudo uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretrain
 
 uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_ff_learning_rate.json  --checkpoint=0
 
-pushrun podscreen bash -c  "type down && uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_precision.json | tee last_output.txt; down"
-
-pushrun podscreen bash -c  "type down && uv run --group=cuda cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --meta_parameters_path=cs336_basics/pretraining/configurations/meta_sweep_optimizer.json | tee last_output.txt; down"
+RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json"
+pushrun podscreen bash -c  "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && down"
 """
 
 import sys

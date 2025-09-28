@@ -170,7 +170,8 @@ class HistogramRecorder:
         max_limit = max(abs(mean + 3 * std), abs(mean - 3 * std), 1e-11)
 
         self._cached_range[name] = (
-            self._cached_range.get(name, 3 * std) * 0.95 + 0.05 * max_limit
+            max_limit
+            # self._cached_range.get(name, 3 * std) * 0.95 + 0.05 * max_limit
         )
 
         x = 1 / self._cached_range[name] * x

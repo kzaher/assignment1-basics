@@ -3,9 +3,6 @@
         {
             "path": "training_loop.optimizer_type",
             "string_values": [
-                "muon_with_adam",
-                "muon_with_adam_adam",
-                "torch_adamw",
                 null
             ]
         }
