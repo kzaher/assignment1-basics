@@ -1,8 +1,7 @@
 import pytest
 import dataclasses
 from typing import List, Dict, Any
-from cs336_basics.extensions import replace_recursively
-
+from cs336_basics.extensions import replace_recursively, json_diff_as_csv
 
 @dataclasses.dataclass
 class InnerData:
@@ -302,6 +301,107 @@ class TestEdgeCases:
         assert result.empty_list == [1, 2, 3]
         assert obj.empty_list == []  # Original unchanged
 
+class TestJsonDiff:
+    def test_no_change(self):
+        j1 = {"a": 1, "b": {"c": 2}}
+        j2 = {"a": 1, "b": {"c": 2}}
+        assert json_diff_as_csv(j1, j2) == ""
+
+
+    def test_simple_change(self):
+        assert json_diff_as_csv({"a": 1}, {"a": 2}) == "a=2"
+
+
+    def test_missing_key(self):
+        assert json_diff_as_csv({"a": 1}, {}) == "a=<removed>"
+
+
+    def test_entire_dict_removed(self):
+        j1 = {"a": {"x": 1, "y": 2}}
+        j2 = {}
+        result = json_diff_as_csv(j1, j2)
+        assert "a.x=<removed>" in result
+        assert "a.y=<removed>" in result
+
+
+    def test_entire_list_removed(self):
+        j1 = {"a": [1, 2]}
+        j2 = {}
+        result = json_diff_as_csv(j1, j2)
+        assert "a[0]=<removed>" in result
+        assert "a[1]=<removed>" in result
+
+
+    def test_nested_change(self):
+        j1 = {"a": {"b": {"c": 1}}}
+        j2 = {"a": {"b": {"c": 2}}}
+        assert json_diff_as_csv(j1, j2) == "a.b.c=2"
+
+
+    def test_list_change(self):
+        j1 = {"a": [1, 2, 3]}
+        j2 = {"a": [1, 5, 3]}
+        assert json_diff_as_csv(j1, j2) == "a[1]=5"
+
+
+    def test_list_length_change(self):
+        j1 = {"a": [1, 2]}
+        j2 = {"a": [1, 2, 3]}
+        assert json_diff_as_csv(j1, j2) == "a[2]=3"
+
+
+    def test_multiple_changes(self):
+        j1 = {"a": 1, "b": [1, {"x": 5}]}
+        j2 = {"a": 2, "b": [1, {"x": 10}]}
+        result = json_diff_as_csv(j1, j2)
+        assert "a=2" in result
+        assert "b[1].x=10" in result
+
+
+    def test_type_change_dict_to_int(self):
+        j1 = {"a": {"x": 1, "y": 2}}
+        j2 = {"a": 42}
+        result = json_diff_as_csv(j1, j2)
+        assert "a.x=<removed>" in result
+        assert "a.y=<removed>" in result
+        assert "a=42" in result
+
+
+    def test_type_change_list_to_dict(self):
+        j1 = {"a": [1, 2]}
+        j2 = {"a": {"x": 10}}
+        result = json_diff_as_csv(j1, j2)
+        assert "a[0]=<removed>" in result
+        assert "a[1]=<removed>" in result
+        assert "a.x=10" in result
+
+
+    def test_type_change_int_to_list(self):
+        j1 = {"a": 5}
+        j2 = {"a": [1, 2]}
+        result = json_diff_as_csv(j1, j2)
+        assert "a=<removed>" in result
+        assert "a[0]=1" in result
+        assert "a[1]=2" in result
+
+
+    def test_type_change_none_to_dict(self):
+        j1 = {"a": None}
+        j2 = {"a": {"x": 1}}
+        result = json_diff_as_csv(j1, j2)
+        assert "a=<removed>" not in result
+        assert "a.x=1" in result
+
+
+    def test_complex_mixed_changes(self):
+        j1 = {"a": 1, "b": {"c": [1, 2]}, "d": {"z": 9}}
+        j2 = {"a": 10, "b": {"c": [1, 3, 4]}, "d": 5}
+        result = json_diff_as_csv(j1, j2)
+        assert "a=10" in result
+        assert "b.c[1]=3" in result
+        assert "b.c[2]=4" in result
+        assert "d.z=<removed>" in result
+        assert "d=5" in result
 
 if __name__ == "__main__":
     pytest.main([__file__])

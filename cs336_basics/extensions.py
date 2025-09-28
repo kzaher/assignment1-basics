@@ -65,3 +65,92 @@ def replace_recursively(
     if transform is not None:
         final_value = transform(recorder._current_object)
     return recorder._replace_value(final_value)
+
+def _flatten_as_removed(node, path):
+    """Helper: flatten a dict/list/primitive into removals."""
+    changes = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            new_path = f"{path}.{k}" if path else k
+            changes.extend(_flatten_as_removed(v, new_path))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            new_path = f"{path}[{i}]"
+            changes.extend(_flatten_as_removed(v, new_path))
+    else:
+        changes.append(f"{path}=<removed>")
+    return changes
+
+
+def _flatten_as_added(node, path):
+    """Helper: flatten a dict/list/primitive into additions."""
+    changes = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            new_path = f"{path}.{k}" if path else k
+            changes.extend(_flatten_as_added(v, new_path))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            new_path = f"{path}[{i}]"
+            changes.extend(_flatten_as_added(v, new_path))
+    else:
+        changes.append(f"{path}={node}")
+    return changes
+
+
+def diff_json(json1, json2, path=""):
+    """
+    Recursively find differences between two JSON trees and record new values.
+    Returns:
+        List of "path=new_value" strings (<removed> for deletions)
+    """
+    changes = []
+
+    # Handle None explicitly
+    if json1 is None and json2 is not None:
+        changes.extend(_flatten_as_added(json2, path))
+        return changes
+    if json2 is None and json1 is not None:
+        changes.extend(_flatten_as_removed(json1, path))
+        return changes
+
+    # Type changed
+    if type(json1) != type(json2):
+        changes.extend(_flatten_as_removed(json1, path))
+        changes.extend(_flatten_as_added(json2, path))
+        return changes
+
+    # Both dicts
+    if isinstance(json1, dict):
+        keys = set(json1.keys()).union(json2.keys())
+        for key in keys:
+            new_path = f"{path}.{key}" if path else key
+            if key not in json1:
+                changes.extend(_flatten_as_added(json2[key], new_path))
+            elif key not in json2:
+                changes.extend(_flatten_as_removed(json1[key], new_path))
+            else:
+                changes.extend(diff_json(json1[key], json2[key], new_path))
+
+    # Both lists
+    elif isinstance(json1, list):
+        max_len = max(len(json1), len(json2))
+        for i in range(max_len):
+            new_path = f"{path}[{i}]"
+            if i >= len(json1):
+                changes.extend(_flatten_as_added(json2[i], new_path))
+            elif i >= len(json2):
+                changes.extend(_flatten_as_removed(json1[i], new_path))
+            else:
+                changes.extend(diff_json(json1[i], json2[i], new_path))
+
+    # Both primitives
+    else:
+        if json1 != json2:
+            changes.append(f"{path}={json2}")
+
+    return changes
+
+
+def json_diff_as_csv(json1, json2):
+    return ",".join(diff_json(json1, json2))

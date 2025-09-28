@@ -97,7 +97,7 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    swiglu = basics_nonlinear.ActivatedLu(d_model=d_model, use_bias=False, d_ff=d_ff, activation=basics_nonlinear.SiLU())
+    swiglu = basics_nonlinear.ActivatedLu(d_model=d_model, use_bias=False, d_ff=d_ff, zero_output=False, activation=basics_nonlinear.SiLU())
     swiglu.load_state_dict(
         {
             "w1.weight": w1_weight,
@@ -567,7 +567,7 @@ def run_cross_entropy(
     cross_entropy = basic_cross_entropy.CrossEntropyLoss()
     return cross_entropy.forward(
         inputs[torch.newaxis, ...], targets[torch.newaxis, ...]
-    )
+    ) / (inputs.numel() / inputs.size(-1))
 
 
 def run_gradient_clipping(
