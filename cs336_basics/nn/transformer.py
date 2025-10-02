@@ -10,7 +10,8 @@ from cs336_basics.nn import extensions
 class TransformerBlock(nn.Module):
     def __init__(
         self,
-        configuration: configuration.TransformerLlmConfiguration
+        configuration: configuration.TransformerLlmConfiguration,
+        packed_rope = False
     ):
         super().__init__()
 
@@ -32,6 +33,7 @@ class TransformerBlock(nn.Module):
             device=device,
             dtype=dtype,
             experiments=experiments,
+            packed_rope=packed_rope
         )
         self.ln2 = experiments.create_default_normalization_layer(d_model=d_model, device=device, dtype=dtype)
         self.ffn = experiments.create_ffn(
@@ -51,11 +53,7 @@ class TransformerBlock(nn.Module):
             x
             + self.attn(
                 self.ln1(x),
-                token_positions=(
-                    torch.arange(x.size(-2))
-                    if token_positions is None
-                    else token_positions
-                ),
+                token_positions=token_positions,
             )
         )
         return attention_output + self.ffn(self.ln2(attention_output))

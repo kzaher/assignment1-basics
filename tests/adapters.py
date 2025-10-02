@@ -97,7 +97,13 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    swiglu = basics_nonlinear.ActivatedLu(d_model=d_model, use_bias=False, d_ff=d_ff, zero_output=False, activation=basics_nonlinear.SiLU())
+    swiglu = basics_nonlinear.ActivatedLu(
+        d_model=d_model,
+        use_bias=False,
+        d_ff=d_ff,
+        zero_output=False,
+        activation=basics_nonlinear.SiLU(),
+    )
     swiglu.load_state_dict(
         {
             "w1.weight": w1_weight,
@@ -166,13 +172,21 @@ def run_multihead_self_attention(
         num_query_heads=num_heads,
         num_key_value_heads=num_heads,
         d_head=q_proj_weight.size(-2) // num_heads,
-        use_bias=False
+        use_bias=False,
+        packed_rope=True,
     )
     mhsa.load_state_dict(
         {
-            "qkv_proj.weight": torch.concat([q_proj_weight, k_proj_weight, v_proj_weight], dim=-2),
             "output_proj.weight": o_proj_weight,
         }
+        | convert_attention_weights(
+            {
+                "q_proj.weight": q_proj_weight,
+                "k_proj.weight": k_proj_weight,
+                "v_proj.weight": v_proj_weight,
+            },
+            d_head=q_proj_weight.size(-2) // num_heads,
+        ),
     )
     return mhsa.forward(in_features)
 
@@ -214,20 +228,30 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
+
+    d_head = q_proj_weight.size(-2) // num_heads
     mhsa = basic_mhsa.MultiHeadSelfAttention(
         d_model=d_model,
         num_query_heads=num_heads,
         num_key_value_heads=num_heads,
-        d_head=q_proj_weight.size(-2) // num_heads,
+        d_head=d_head,
         use_bias=False,
         max_sequence_length=max_seq_len,
-        theta=theta
+        theta=theta,
+        packed_rope=True,
     )
     mhsa.load_state_dict(
         {
-            "qkv_proj.weight": torch.concat([q_proj_weight, k_proj_weight, v_proj_weight], dim=-2),
             "output_proj.weight": o_proj_weight,
         }
+        | convert_attention_weights(
+            {
+                "q_proj.weight": q_proj_weight,
+                "k_proj.weight": k_proj_weight,
+                "v_proj.weight": v_proj_weight,
+            },
+            d_head=d_head,
+        )
     )
     return mhsa.forward(in_features, token_positions=token_positions)
 
@@ -251,22 +275,52 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    rope = basics_rope.Rope(theta=theta, max_seq_len=max_seq_len, d_k=d_k)
-    return rope.forward(in_query_or_key, token_positions)
+    rope = basics_rope.Rope(
+        theta=theta, max_seq_len=max_seq_len, d_k=d_k, packed_rope=True
+    )
+    return rope.forward(in_query_or_key, token_positions=token_positions)
 
-def convert_attention_weights(state_dict: dict[str, torch.Tensor], num_layers: int|None = None):
+
+def convert_attention_weights(
+    state_dict: dict[str, torch.Tensor],
+    d_head,
+    num_layers: int | None = None,
+):
     if num_layers:
         for i in range(num_layers):
-            q = state_dict.pop(f'layers.{i}.attn.q_proj.weight')
-            k = state_dict.pop(f'layers.{i}.attn.k_proj.weight')
-            v = state_dict.pop(f'layers.{i}.attn.v_proj.weight')
-            state_dict = state_dict | {f'layers.{i}.attn.qkv_proj.weight': torch.concat([q, k, v], dim=-2)}
+            q = state_dict.pop(f"layers.{i}.attn.q_proj.weight")
+            k = state_dict.pop(f"layers.{i}.attn.k_proj.weight")
+            v = state_dict.pop(f"layers.{i}.attn.v_proj.weight")
+            qkv_proj = torch.concat([q, k, v], dim=-2)
+            state_dict = state_dict | {
+                f"layers.{i}.attn.qkv_proj.weight": torch.stack(
+                    torch.chunk(qkv_proj, chunks=qkv_proj.size(-2) // d_head), dim=-3
+                )
+            }
         return state_dict
+    elif "attn.q_proj.weight" in state_dict:
+        q = state_dict.pop("attn.q_proj.weight")
+        k = state_dict.pop("attn.k_proj.weight")
+        v = state_dict.pop("attn.v_proj.weight")
+        qkv_proj = torch.concat([q, k, v], dim=-2)
+
+        return state_dict | {
+            "attn.qkv_proj.weight": torch.stack(
+                torch.chunk(qkv_proj, chunks=qkv_proj.size(-2) // d_head), dim=-3
+            )
+        }
     else:
-        q = state_dict.pop('attn.q_proj.weight')
-        k = state_dict.pop('attn.k_proj.weight')
-        v = state_dict.pop('attn.v_proj.weight')
-        return state_dict | {'attn.qkv_proj.weight': torch.concat([q, k, v], dim=-2)}
+        q = state_dict.pop("q_proj.weight")
+        k = state_dict.pop("k_proj.weight")
+        v = state_dict.pop("v_proj.weight")
+        qkv_proj = torch.concat([q, k, v], dim=-2)
+
+        return state_dict | {
+            "qkv_proj.weight": torch.stack(
+                torch.chunk(qkv_proj, chunks=qkv_proj.size(-2) // d_head), dim=-3
+            )
+        }
+
 
 def run_transformer_block(
     d_model: int,
@@ -351,14 +405,17 @@ def run_transformer_block(
             # irrelevant
             vocab_size=0,
             num_layers=0,
-            device='cpu',
-            dtype_str='',
+            device="cpu",
+            dtype_str="",
             dtype=torch.float32,
-            experiments=configuration.ArchitectureExperiments()
+            experiments=configuration.ArchitectureExperiments(),
             # , "d_head", "d_hidden", "rope_theta", "device", "dtype", "experiments"
-        )
+        ),
+        packed_rope=True,
     )
-    transformer_block.load_state_dict(convert_attention_weights(weights))
+    transformer_block.load_state_dict(
+        convert_attention_weights(weights, d_head=d_model // num_heads)
+    )
     return transformer_block.forward(in_features)
 
 
@@ -453,15 +510,20 @@ def run_transformer_lm(
             use_bias=False,
             vocab_size=vocab_size,
             num_layers=num_layers,
-            dtype_str='',
+            dtype_str="",
             dtype=torch.float32,
-            device='cpu',
+            device="cpu",
             # irrelevant
-            experiments=configuration.ArchitectureExperiments()
+            experiments=configuration.ArchitectureExperiments(),
             # , "d_head", "d_hidden", "rope_theta", "device", "dtype", "experiments"
+        ),
+        packed_rope=True,
+    )
+    transformer_lm.load_state_dict(
+        convert_attention_weights(
+            weights, d_head=d_model // num_heads, num_layers=num_layers
         )
     )
-    transformer_lm.load_state_dict(convert_attention_weights(weights, num_layers))
     return transformer_lm.forward(in_indices)
 
 
@@ -567,7 +629,7 @@ def run_cross_entropy(
     cross_entropy = basic_cross_entropy.CrossEntropyLoss()
     return cross_entropy.forward(
         inputs[torch.newaxis, ...], targets[torch.newaxis, ...]
-    ) / (inputs.numel() / inputs.size(-1))
+    )
 
 
 def run_gradient_clipping(
@@ -643,7 +705,7 @@ def run_save_checkpoint(
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
     return extensions.save_checkpoint(
-        model=model, optimizer=optimizer, metadata={'i': iteration}, out=out
+        model=model, optimizer=optimizer, metadata={"i": iteration}, out=out
     )
 
 
@@ -665,7 +727,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    return extensions.load_checkpoint(src=src, model=model, optimizer=optimizer)['i']
+    return extensions.load_checkpoint(src=src, model=model, optimizer=optimizer)["i"]
 
 
 def get_tokenizer(

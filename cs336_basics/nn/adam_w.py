@@ -30,7 +30,6 @@ class AdamW(torch.optim.Optimizer):
     def step(self, closure: Callable | None = None):
         loss = None if closure is None else closure()
         for group in self.param_groups:
-            lr = group["lr"]
             betas = group["betas"]
             eps = group["eps"]
             weight_decay = group["weight_decay"]
@@ -44,6 +43,7 @@ class AdamW(torch.optim.Optimizer):
                 p_state["v"].mul_(betas[1]).addcmul_(
                     p.grad.data, p.grad.data, value=1 - betas[1]
                 )
+                lr = group["lr"] * getattr(p, "lr_mul", 1)
                 alpha_t = (
                     lr
                     * math.sqrt((1 - math.pow(betas[1], t)))

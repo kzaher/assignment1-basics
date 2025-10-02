@@ -6,6 +6,7 @@ import torch
 from torch import nn
 from torch.autograd import Function
 import torch.nn.functional as F
+from torch.profiler import record_function
 
 class Swish(nn.Module):
     def forward(self, x):
@@ -53,9 +54,18 @@ class ActivatedLu(nn.Module):
     def forward(
         self, x: Float[torch.Tensor, "... d_model"]
     ) -> Float[torch.Tensor, "... d_model"]:
-        return self.w2(
-            getattr(self, self.activation_name)(self.w1(x)) * self.w3(x),
-        )
+        with record_function("nonlinear"):
+            with record_function("w1"):
+                w1_proj = self.w1(x)
+            with record_function("w3"):
+                w3_proj = self.w3(x)
+            with record_function("non_linear"):
+                nonlinear_proj = getattr(self, self.activation_name)(w1_proj) * w3_proj
+            
+            with record_function("output_proj"):
+                return self.w2(
+                    nonlinear_proj   
+                )
 
 
 class SiLU(nn.Module):
@@ -130,3 +140,14 @@ class ReluSoft(nn.Module):
         return self.w2(
             self.ff(w1x) * self.w3(x),
         )
+
+
+class ReLUSq(nn.Module):
+    __constants__ = ["inplace"]
+    inplace: bool
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return F.relu(input).square()

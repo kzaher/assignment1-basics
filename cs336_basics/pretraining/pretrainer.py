@@ -1,7 +1,13 @@
+"""
+RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --exp_path=cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
+pushrun podscreen bash -c  "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && down"
+
+RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --exp_path=cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
+pushrun vasttmux bash -c "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && downy"
+"""
 from cs336_basics.pretraining import configuration
 from cs336_basics.nn import extensions
 from cs336_basics.nn import transformer_lm
-from cs336_basics.nn import adam_w
 from cs336_basics.nn import cross_entropy
 from cs336_basics import pretokenization
 import os
@@ -16,7 +22,6 @@ from cs336_basics import bpe_constants
 import logging
 import multiprocessing
 import functools
-import statistics
 import wandb
 import datetime
 import dataclasses
@@ -25,6 +30,7 @@ import gc
 import json
 import pandas as pd
 import math
+from torch.profiler import profile, ProfilerActivity, record_function
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +50,7 @@ class Pretrainer:
         self._uncompiled_model = model
 
         # Compile the model with optimizations for training
-        self._model = torch.compile(model, mode="default")
+        self._model = model # torch.compile(model, mode="default")
         self._optimizer, self._optimizer_configuration = (
             self._configuration.training_loop.create_optimizer(
                 self._model.named_parameters()
@@ -98,8 +104,8 @@ class Pretrainer:
         self._i = int(metadata["i"]) + 1
         self._run_id = str(metadata["run_id"])
 
-    def _persist_checkpoint(self):
-        if not self._configuration.training_loop.write_checkpoint:
+    def _persist_checkpoint(self, force=False):
+        if not self._configuration.training_loop.write_checkpoint and not force:
             return
         extensions.save_checkpoint(
             self._model,
@@ -127,6 +133,19 @@ class Pretrainer:
                 else False
             ),
         )
+        cosine_lr2 = extensions.cosine_learning_rate(
+            it=self._i,
+            zero_iters=annealing_configuration.zero_iters,
+            max_learning_rate=annealing_configuration.max_learning_rate2 or 0.0,
+            min_learning_rate=annealing_configuration.min_learning_rate2 or 0.0,
+            warmup_iters=annealing_configuration.warmup_iters,
+            cosine_cycle_iters=annealing_configuration.cosine_cycle_iters,
+            use_cosine_rampup=(
+                annealing_configuration.use_cosine_rampup
+                if annealing_configuration.use_cosine_rampup is not None
+                else False
+            ),
+        )
         ff_non_muon_lr = extensions.cosine_learning_rate(
             it=self._i,
             zero_iters=annealing_configuration.zero_iters,
@@ -145,7 +164,7 @@ class Pretrainer:
             zero_iters=annealing_configuration.zero_iters,
             max_learning_rate=annealing_configuration.safe_max_learning_rate,
             min_learning_rate=annealing_configuration.safe_min_learning_rate,
-            warmup_iters=annealing_configuration.warmup_iters,
+            warmup_iters=annealing_configuration.warmup_iters2 or annealing_configuration.warmup_iters,
             cosine_cycle_iters=annealing_configuration.cosine_cycle_iters,
             use_cosine_rampup=(
                 annealing_configuration.use_cosine_rampup
@@ -155,7 +174,7 @@ class Pretrainer:
         )
         applied_muon_count = 0.0
         applied_adam_count = 0.0
-        applied_ff_non_muon_count = 0.0
+        applied_adam2_count = 0.0
         applied_safe_count = 0.0
         muon_lr = self._configuration.training_loop.muon_optimizer_configuration.lr
 
@@ -170,10 +189,10 @@ class Pretrainer:
                     nonlocal applied_safe_count
                     applied_safe_count += 1
                     return safe_lr
-                if pg["is_ff"]:
-                    nonlocal applied_ff_non_muon_count
-                    applied_ff_non_muon_count += 1
-                    return ff_non_muon_lr
+                if pg.get("use_lr2", False):
+                    nonlocal applied_adam2_count
+                    applied_adam2_count += 1
+                    return cosine_lr2
                 else:
                     nonlocal applied_adam_count
                     applied_adam_count += 1
@@ -184,10 +203,10 @@ class Pretrainer:
         return {
             "health/cosine_learning_rate_adam": cosine_lr,
             "health/cosine_learning_rate_adam/count": applied_adam_count,
+            "health/cosine_learning_rate_adam2": cosine_lr2,
+            "health/cosine_learning_rate_adam2/count": applied_adam2_count,
             "health/cosine_learning_rate_muon": muon_lr,
             "health/cosine_learning_rate_muon/count": applied_muon_count,
-            "health/cosine_learning_rate_ff_adam": ff_non_muon_lr,
-            "health/cosine_learning_rate_ff_adam/count": applied_ff_non_muon_count,
             "health/cosine_learning_rate_safe_adam": safe_lr,
             "health/cosine_learning_rate_safe_adam/count": applied_safe_count,
         }
@@ -418,7 +437,7 @@ class Pretrainer:
             with activation_recorder.intercept_activations(
                 intercept=self._i
                 % (self._configuration.training_loop.checkpoint_persist_modulus)
-                == 0
+                == 0 and False
             ) as recorder:
                 self._optimizer.zero_grad()
                 annealing_logs = self._set_annealed_learning_rate()
@@ -429,22 +448,26 @@ class Pretrainer:
                     context_length=context_size,
                     device=self._configuration.training_loop.transformer_llm.device,
                 )
-                ys = self._model(training_batch.to(torch.int64), stop_layer_index=self._stop_layer_index())
-                batch_size_times_context_size = ys.size(-2) * ys.size(-3)
-                loss = cross_entropy_loss(
-                    ys,
-                    target=target.to(torch.int64).to(
-                        device=self._configuration.training_loop.transformer_llm.device,
-                    ),
-                )
-                loss.backward()
-                (clipped_gradients, total_gradient_value) = (
-                    extensions.gradient_clipping_with_gradient_value(
-                        self._model.parameters(),
-                        max_l2_norm=self._configuration.training_loop.initial_max_l2_norm,
+                with record_function("forward"):
+                    ys = self._model(training_batch.to(torch.int64), stop_layer_index=self._stop_layer_index())
+                with record_function("loss"):
+                    loss = cross_entropy_loss(
+                        ys,
+                        target=target.to(torch.int64).to(
+                            device=self._configuration.training_loop.transformer_llm.device,
+                        ),
                     )
-                )
-                self._optimizer.step()
+                with record_function("backward"):
+                    loss.backward()
+                with record_function("clipping"):
+                    (clipped_gradients, total_gradient_value) = (
+                        extensions.gradient_clipping_with_gradient_value(
+                            self._model.parameters(),
+                            max_l2_norm=self._configuration.training_loop.initial_max_l2_norm,
+                        )
+                    )
+                with record_function("optimizer"):
+                    self._optimizer.step()
                 log_args = {}
                 should_stop = self.should_stop()
                 if (
@@ -454,7 +477,6 @@ class Pretrainer:
                     == 0
                 ) or should_stop:
                     start_save = time.time()
-                    self._persist_checkpoint()
                     (validation_batch, validation_target) = extensions.get_batch(
                         tokenized_validation_data,
                         batch_size=batch_size,
@@ -471,7 +493,6 @@ class Pretrainer:
                     log_args |= {
                         "health/checkpoint_save_time": time.time() - start_save,
                         "metrics/loss/validation": validation_loss.item()
-                        / batch_size_times_context_size,
                     }
                     gc.collect()
                     torch.cuda.empty_cache()
@@ -500,8 +521,7 @@ class Pretrainer:
                 wandb.log(
                     log_args
                     | {
-                        "metrics/loss/training": loss.item()
-                        / batch_size_times_context_size,
+                        "metrics/loss/training": loss.item(),
                         "health/i": self._i,
                         "health/step_time": time.time() - start,
                         "health/gradient/clipping": int(clipped_gradients),
@@ -515,6 +535,10 @@ class Pretrainer:
                     logging.info(
                         f"Training ended: max_iterations={self._configuration.training_loop.max_iterations}, time_limit={self._configuration.training_loop.time_limit_in_seconds}"
                     )
+                    try:
+                        self._persist_checkpoint(force=True)
+                    except Exception as e:
+                        logger.error('Failed to write checkpoint')
                     break
 
     def train(self):
@@ -586,7 +610,21 @@ class Pretrainer:
                 f"   Run: https://wandb.ai/ante-materija-gmbh/{project_name}/runs/{run_id}"
             )
 
-            self._run_training_loop(
-                tokenized_training_data=tokenized_training_data,
-                tokenized_validation_data=tokenized_validation_data,
-            )
+            activities = [ProfilerActivity.CPU]
+            device = 'cpu'
+            if torch.cuda.is_available():
+                device = "cuda"
+                activities += [ProfilerActivity.CUDA]
+            sort_by_keyword = device + "_time_total"
+            with profile(activities=activities, record_shapes=True) as prof:
+                with record_function("train"):
+                    self._run_training_loop(
+                        tokenized_training_data=tokenized_training_data,
+                        tokenized_validation_data=tokenized_validation_data,
+                    )
+            
+            logger.info('Performance Table\n%s', prof.key_averages().table(sort_by=sort_by_keyword, row_limit=100))
+            logger.info('Performance Table\n%s', prof.key_averages(group_by_input_shape=True).table(sort_by=sort_by_keyword, row_limit=100))
+            trace_output_path = '/tmp/trace.json'
+            logger.info("Writing chrome trace to %s", trace_output_path)
+            prof.export_chrome_trace(trace_output_path)

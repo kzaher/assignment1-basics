@@ -95,15 +95,18 @@ function run_generic() {
     fi
   fi
 
-
+  TMUX_STARTED=0;
+  if [[ -n "$@" ]]; then
+    TMUX_STARTED=1;
+  fi
   INTERPRETER=${INTERPRETER:-exec_base64_command}
-  $(eval echo "${RUN_SSH_CMD}") "$RUN_SHELL_STARTUP -c \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; source ~/.bashrc; initialize_run; ${INTERPRETER} $(encode_args "$@")');\""
+  $(eval echo "${RUN_SSH_CMD}") "$RUN_SHELL_STARTUP \"cd $RUN_WORKDIR && export DEBUG_SCRIPT=$DEBUG_SCRIPT && exec bash --rcfile <(echo 'source ./scripts/register_commands.sh; TMUX_STARTED=${TMUX_STARTED} source ~/.bashrc; initialize_run; ${INTERPRETER} $(encode_args "$@")');\""
 }
 
 function run_jozo() {
   RUN_SETUP_CMD="" \
   RUN_SSH_CMD="ssh -t kruno@${SSH_HOSTNAME:-jozo.tailb3978.ts.net} -i ~/.ssh/id_jozo" \
-  RUN_SHELL_STARTUP="bash" \
+  RUN_SHELL_STARTUP="bash -c" \
   RUN_WORKDIR="/mnt/${JOZO_WORKDIR}" \
   run_generic "$@"
 }
@@ -111,7 +114,7 @@ function run_jozo() {
 function run_jozodoc() {
   RUN_SETUP_CMD="" \
   RUN_SSH_CMD="ssh -t kruno@${SSH_HOSTNAME:-jozo.tailb3978.ts.net} -i ~/.ssh/id_jozo" \
-  RUN_SHELL_STARTUP="docker exec -it ${JOZODOC_CONTAINER} bash" \
+  RUN_SHELL_STARTUP="docker exec -it ${JOZODOC_CONTAINER} bash -c " \
   RUN_WORKDIR="/workspace" \
   run_generic "$@"
 }
@@ -119,7 +122,25 @@ function run_jozodoc() {
 function run_pod() {
   RUN_SETUP_CMD="load_runpod_env" \
   RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod -p \${RP_SSH_PORT} root@\${RP_IP}" \
-  RUN_SHELL_STARTUP="${RUN_SHELL_STARTUP:-bash}" \
+  RUN_SHELL_STARTUP="${RUN_SHELL_STARTUP:-bash -c}" \
+  RUN_WORKDIR="${POD_WORKDIR}" \
+  run_generic "$@"
+}
+
+function load_vast_ai() {
+  export VASTAI_ID=${VASTAI_ID:-$(vastai show instances -q | head -n1)}
+  if [[ "$VASTAI_CACHED_ID" == "$VASTAI_ID" ]]; then
+    return 0
+  fi
+  export VASTAI_SSH="$(vastai ssh-url $VASTAI_ID)"
+  export VASTAI_CACHED_ID="$VASTAI_ID"
+}
+
+function run_vast() {
+  load_vast_ai
+  RUN_SETUP_CMD="" \
+  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod `vastai ssh-url ${VASTAI_ID}`" \
+  RUN_SHELL_STARTUP="${RUN_SHELL_STARTUP:-bash -c}" \
   RUN_WORKDIR="${POD_WORKDIR}" \
   run_generic "$@"
 }
@@ -130,8 +151,18 @@ run_podscreen() {
     debug_args "$@"
     echo "========================="
   fi
-  RUN_SHELL_STARTUP="screen -S background bash" \
+  RUN_SHELL_STARTUP="screen -S background bash -c" \
   run_pod "$@"
+}
+
+run_vasttmux() {
+  if [[ "$DEBUG_SCRIPT" -ge 1 ]]; then
+    echo "=== RUN_PODSCREEN DEBUG ==="
+    debug_args "$@"
+    echo "========================="
+  fi
+  RUN_SHELL_STARTUP="tmux new-session -s background" \
+  run_vast "$@"
 }
 
 # Generic dispatcher function for commands with target-specific implementations
@@ -179,6 +210,24 @@ function push_pod() {
 }
 function push_podscreen() {
   push_pod
+}
+
+function push_vast() {
+  load_vast_ai
+  . ./scripts/rsync.sh
+  # Use -L to follow/convert symbolic links for vastai
+  PORT=$(echo ${VASTAI_SSH} | cut -d ':' -f 3)
+  IP=$(echo ${VASTAI_SSH} | cut -d '@' -f 2 | cut -d ':' -f 1)
+  RSYNC_EXTRA_FLAGS="-L" RSYNC_RSH="ssh -i ~/.ssh/id_runpod -p ${PORT}" rsync_default \
+    --include 'data/' \
+    --include 'data/owt_train.txt.tokens.vocab_size=32000.npy' \
+    --include 'data/owt_valid.txt.tokens.vocab_size=32000.npy' \
+    --exclude 'data/*' \
+    . root@"${IP}":/workspace
+}
+
+function push_vasttmux() {
+  push_vast
 }
 
 function push() {
@@ -318,11 +367,20 @@ function up() {
   dispatch_to_target "up" "$@"
 }
 
+function down_this_vast() {
+  if [[ -n "$VAST_AI_API_KEY" ]]; then
+    vastai set api-key $VAST_AI_API_KEY
+  fi
+  echo vastai stop instance $(echo "$VAST_CONTAINERLABEL" | cut -d '.' -f 2)
+}
+
 function down_this() {
     if [[ -n "${RUNPOD_POD_ID}" ]]; then
       down_this_pod
     elif [[ -f "/mnt/c/Users/kruno/sleep_computer.bat" ]]; then 
       down_this_jozo
+    elif [[ -n "${VAST_CONTAINERLABEL}" ]]; then 
+      down_this_vast
     else 
       echo "This survived" >&2
       return 1
@@ -337,7 +395,18 @@ function reset() {
   dispatch_to_target "reset" "$@"
 }
 
+function pull_vast() {
+  load_vast_ai
+  eval $(vastai ssh-url $VASTAI_ID | sed -E 's#ssh://([^@]+)@([^:]+):([0-9]+)#USER=\1 HOST=\2 PORT=\3#') \
+    && scp -i ~/.ssh/id_runpod -P $PORT $USER@$HOST:/tmp/trace.json trace.json
+}
+
+function pull() {
+  dispatch_to_target "pull" "$@"
+}
+
 export -f down
 export -f down_this
 export -f down_this_pod
 export -f down_this_jozo
+export -f down_this_vast

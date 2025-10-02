@@ -8,7 +8,9 @@ from torch import Tensor
 from jaxtyping import Float, Int
 import einops
 import numpy as np
-
+import math
+from torch.nn import functional as F
+from torch.profiler import record_function
 
 class MultiHeadSelfAttention(nn.Module):
     def __init__(
@@ -23,6 +25,7 @@ class MultiHeadSelfAttention(nn.Module):
         theta: float | None = None,
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
+        packed_rope = False
     ):
         super().__init__()
         self.d_model = d_model
@@ -40,6 +43,7 @@ class MultiHeadSelfAttention(nn.Module):
                 max_seq_len=max_sequence_length,
                 device=device,
                 dtype=dtype,
+                packed_rope=packed_rope
             )
         else:
             self.rope = None
@@ -48,7 +52,7 @@ class MultiHeadSelfAttention(nn.Module):
         )
         self.qkv_proj = linear.Linear(
             in_features=d_model,
-            out_features=d_head * (num_query_heads + 2 * num_key_value_heads),
+            out_features=(num_query_heads + 2 * num_key_value_heads, d_head),
             use_bias=use_bias,
             device=device,
             dtype=dtype,
@@ -61,62 +65,73 @@ class MultiHeadSelfAttention(nn.Module):
             dtype=dtype,
         )
 
-        if experiments.zero_output:
+        self.experiments = experiments
+        if self.experiments.zero_output:
             self.output_proj.weight.detach().zero_()
+        if self.experiments.qk_norm:
+            self.qk_norm_g = nn.Parameter(torch.tensor(math.log2(1000 * 1000 - 1000), device=device, dtype=dtype))
 
     def forward(
         self,
         x: Float[Tensor, "... sequence_length d_model"],
         token_positions: Int[Tensor, " ... sequence_length"] | None = None,
     ) -> Float[Tensor, "... sequence_length d_model"]:
-        input_proj = self.qkv_proj(x)
-        q, k, v = torch.split(
-            input_proj,
-            (
-                self.num_query_heads * self.d_head,
-                self.num_key_value_heads * self.d_head,
-                self.num_key_value_heads * self.d_head,
-            ),
-            dim=-1,
-        )
-        q_heads = einops.rearrange(
-            q,
-            "... sequence_length (head head_dim)->... head sequence_length head_dim",
-            head=self.num_query_heads,
-            head_dim=self.d_head,
-        )
-        k_heads = einops.rearrange(
-            k,
-            "... sequence_length (head head_dim)->... head sequence_length head_dim",
-            head=self.num_key_value_heads,
-            head_dim=self.d_head,
-        )
-        v_heads = einops.rearrange(
-            v,
-            "... sequence_length (head head_dim)->... head sequence_length head_dim",
-            head=self.num_key_value_heads,
-        )
-        if self.replicate_key_value_heads > 1 or True:
-            k_heads = torch.repeat_interleave(
-                k_heads, self.replicate_key_value_heads, dim=-3
+        with record_function("mhsa"):
+            with record_function("input_proj"):
+                input_proj = self.qkv_proj(x)
+            q, k, v = torch.split(
+                input_proj,
+                [
+                    self.num_query_heads,
+                    self.num_key_value_heads,
+                    self.num_key_value_heads
+                ],
+                dim=-2,
             )
-            v_heads = torch.repeat_interleave(
-                v_heads, self.replicate_key_value_heads, dim=-3
+            q_heads = einops.rearrange(
+                q,
+                "... sequence_length head head_dim->... head sequence_length head_dim",
+                head=self.num_query_heads,
+                head_dim=self.d_head,
             )
+            k_heads = einops.rearrange(
+                k,
+                "... sequence_length head head_dim->... head sequence_length head_dim",
+                head=self.num_key_value_heads,
+                head_dim=self.d_head,
+            )
+            v_heads = einops.rearrange(
+                v,
+                "... sequence_length head head_dim->... head sequence_length head_dim",
+                head=self.num_key_value_heads,
+            )
+            if self.experiments.qk_norm:
+                q_heads = self.qk_norm_g * F.normalize(q_heads, p=2, dim=-1)
+                k_heads = self.qk_norm_g * F.normalize(k_heads, p=2, dim=-1)
 
-        if self.rope and token_positions is not None:
-            q_heads = self.rope(q_heads, token_positions=token_positions)
-            k_heads = self.rope(k_heads, token_positions=token_positions)
+            if self.replicate_key_value_heads > 1 or True:
+                k_heads = torch.repeat_interleave(
+                    k_heads, self.replicate_key_value_heads, dim=-3
+                )
+                v_heads = torch.repeat_interleave(
+                    v_heads, self.replicate_key_value_heads, dim=-3
+                )
 
-        sequence_length = x.size(-2)
-        causal_mask = torch.tril(
-            torch.ones((sequence_length, sequence_length), device=self.device)
-        ).to(torch.bool)
-        return self.output_proj(
-            einops.rearrange(
-                self.scaled_dot_product_attention(
-                    Q=q_heads, K=k_heads, V=v_heads, mask=causal_mask
-                ),
-                "... head sequence_length per_head -> ... sequence_length (head per_head)",
-            )
-        )
+            with record_function("rope"):
+                if self.rope:
+                    q_heads = self.rope(q_heads, token_positions=token_positions)
+                    k_heads = self.rope(k_heads, token_positions=token_positions)
+
+            sequence_length = x.size(-2)
+            causal_mask = torch.tril(
+                torch.ones((sequence_length, sequence_length), device=self.device)
+            ).to(torch.bool)
+            with record_function("output_proj"):
+                return self.output_proj(
+                    einops.rearrange(
+                        self.scaled_dot_product_attention(
+                            Q=q_heads, K=k_heads, V=v_heads, mask=causal_mask
+                        ),
+                        "... head sequence_length per_head -> ... sequence_length (head per_head)",
+                    )
+                )

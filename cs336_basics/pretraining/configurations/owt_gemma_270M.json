@@ -48,6 +48,6 @@
     "context_length": 256,
     "batch_size": 256,
     "initial_max_l2_norm": 200000000,
-    "max_iterations": 10000,
-    "time_limit_in_seconds": 3600
+    "max_iterations": 12000,
+    "time_limit_in_seconds": 5940
 }

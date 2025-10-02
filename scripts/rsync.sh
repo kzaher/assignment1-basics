@@ -12,5 +12,6 @@ function rsync_default() {
     --exclude '.pytest_cache/' \
     --exclude 'uv.lock' \
     --exclude '*.egg-info/' \
+    --exclude 'trace.json' \
     "$@" 
 }

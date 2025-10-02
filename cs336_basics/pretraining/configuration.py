@@ -45,6 +45,9 @@ class AnnealingConfiguration:
     safe_max_learning_rate: float
     safe_min_learning_rate: float
     cosine_cycle_iters: int
+    max_learning_rate2: float | None = None
+    min_learning_rate2: float | None = None
+    warmup_iters2: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -58,6 +61,10 @@ class ArchitectureExperiments:
     zero_output: bool | None = None
     context_increment: int | None = None
     layer_increment: bool = False
+    qk_norm: bool = False
+    optimizer_type: str | None = None
+    head_lr_mul: float | None = None
+    embeddings_lr_mul: float | None = None
 
     def create_final_normalization_layer(
         self, d_model: int, device: str, dtype: torch.dtype | None
@@ -138,6 +145,16 @@ class ArchitectureExperiments:
                     zero_output=self.zero_output or False,
                     activation=torch.nn.ReLU(),
                 )
+            case "relu_sq":
+                return nonlinear.ActivatedLu(
+                    d_model=d_model,
+                    d_ff=d_hidden,
+                    use_bias=use_bias,
+                    device=device,
+                    dtype=dtype,
+                    zero_output=self.zero_output or False,
+                    activation=nonlinear.ReLUSq()
+                )
             case _:
                 raise Exception(f"ff_type is unknown: {self.ff_type}")
 
@@ -176,37 +193,35 @@ class LlmPretrainingTrainingLoopConfiguration:
     max_iterations: int
     time_limit_in_seconds: int | None = None
     write_checkpoint: bool = False
-    optimizer_type: str | None = None
 
     def create_optimizer(
         self, named_parameters
     ) -> tuple[torch.optim.Optimizer, dict[str, object]]:
         def create_param(name: str, parameters: torch.Tensor):
             assert self.muon_optimizer_configuration
-            is_feed_forward = bool(re.findall("\\.ffn\\.", name))
-            if is_feed_forward and self.optimizer_type in {
-                "muon_with_adam",
-                "muon_with_adam_adam_switch",
+            is_muon_layer = bool(re.findall("\\.ffn\\.|\\.attn\\.", name)) and parameters.dim() >= 2
+            if is_muon_layer and self.transformer_llm.experiments.optimizer_type in {
+                "muon_aggressive_with_adam"
             }:
                 return dict(
                     use_muon=True,
-                    is_ff=is_feed_forward,
                     lr=self.muon_optimizer_configuration.lr,
+                    use_lr2=False,
                     momentum=self.muon_optimizer_configuration.momentum,
                     betas=self.adamw_optimizer_configuration.betas,
                     weight_decay=self.muon_optimizer_configuration.weight_decay,
-                    eps=1e-5,
+                    eps=self.adamw_optimizer_configuration.eps,
                     params=parameters,
                     name=name,
                 )
             else:
                 return dict(
                     use_muon=False,
-                    is_ff=False,
+                    use_lr2=is_muon_layer and self.transformer_llm.experiments.optimizer_type == "adam_muon_equivalent",
                     lr=0,  # self.adamw_optimizer_configuration.lr,
                     betas=self.adamw_optimizer_configuration.betas,
                     weight_decay=self.adamw_optimizer_configuration.weight_decay,
-                    eps=1e-5,
+                    eps=self.adamw_optimizer_configuration.eps,
                     params=parameters,
                     name=name,
                 )
@@ -219,9 +234,9 @@ class LlmPretrainingTrainingLoopConfiguration:
                 for p in parameters
             ]
         }
-        match self.optimizer_type:
+        match self.transformer_llm.experiments.optimizer_type:
             case (
-                "muon_with_adam" | "muon_with_adam_adam" | "muon_with_adam_adam_switch"
+                "muon_aggressive_with_adam" | "adam_muon_equivalent"
             ):
                 return (
                     muon.SingleDeviceMuonWithAuxAdam(parameters),
@@ -325,7 +340,7 @@ class PretrainingConfiguration:
         assert self.training_loop.name
         suffix = self.suffix or ""
         if suffix:
-            return f"{self.output_path}/{self.training_loop.name}/{suffix}"
+            return f"{self.output_path}/{self.training_loop.name}/{suffix}"[:100]
         else:
             return f"{self.output_path}/{self.training_loop.name}"
 

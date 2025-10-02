@@ -1,6 +1,6 @@
 import logging
 import sys
-from typing import Callable, TypeVar, Any
+from typing import Callable, TypeVar, Any, Tuple
 import dataclasses
 
 
@@ -66,7 +66,7 @@ def replace_recursively(
         final_value = transform(recorder._current_object)
     return recorder._replace_value(final_value)
 
-def _flatten_as_removed(node, path):
+def _flatten_as_removed(node, path) -> list[Tuple[str, str]]:
     """Helper: flatten a dict/list/primitive into removals."""
     changes = []
     if isinstance(node, dict):
@@ -78,11 +78,11 @@ def _flatten_as_removed(node, path):
             new_path = f"{path}[{i}]"
             changes.extend(_flatten_as_removed(v, new_path))
     else:
-        changes.append(f"{path}=<removed>")
+        changes.append([path, '<removed>'])
     return changes
 
 
-def _flatten_as_added(node, path):
+def _flatten_as_added(node, path) -> list[Tuple[str, str]]:
     """Helper: flatten a dict/list/primitive into additions."""
     changes = []
     if isinstance(node, dict):
@@ -94,11 +94,11 @@ def _flatten_as_added(node, path):
             new_path = f"{path}[{i}]"
             changes.extend(_flatten_as_added(v, new_path))
     else:
-        changes.append(f"{path}={node}")
+        changes.append([path, node])
     return changes
 
 
-def diff_json(json1, json2, path=""):
+def diff_json(json1, json2, path="") -> list[Tuple[str, str]]:
     """
     Recursively find differences between two JSON trees and record new values.
     Returns:
@@ -147,10 +147,10 @@ def diff_json(json1, json2, path=""):
     # Both primitives
     else:
         if json1 != json2:
-            changes.append(f"{path}={json2}")
+            changes.append([path, json2])
 
     return changes
 
 
 def json_diff_as_csv(json1, json2):
-    return ",".join(diff_json(json1, json2))
+    return ",".join(['='.join([str(e) for e in t]) for t in diff_json(json1, json2)])

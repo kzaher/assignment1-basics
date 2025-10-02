@@ -9,12 +9,13 @@ from cs336_basics.pretraining import configuration
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
-
+from torch.profiler import record_function
 
 class TransformerLm(nn.Module):
     def __init__(
         self,
         configuration: configuration.TransformerLlmConfiguration,
+        packed_rope=False
     ):
         super().__init__()
         self.experiments = configuration.experiments
@@ -28,7 +29,7 @@ class TransformerLm(nn.Module):
         )
         self.layers = nn.ModuleList(
             [
-                transformer.TransformerBlock(configuration)
+                transformer.TransformerBlock(configuration, packed_rope=packed_rope)
                 for _ in range(configuration.num_layers)
             ]
         )
@@ -44,6 +45,10 @@ class TransformerLm(nn.Module):
         )
         if configuration.experiments.zero_output:
             self.lm_head.weight.detach().zero_()
+        if configuration.experiments.embeddings_lr_mul:
+            self.token_embeddings.weight.lr_mul = configuration.experiments.embeddings_lr_mul
+        if configuration.experiments.head_lr_mul:
+            self.lm_head.weight.lr_mul = configuration.experiments.head_lr_mul
 
     def forward(
         self,
@@ -51,11 +56,14 @@ class TransformerLm(nn.Module):
         token_positions: Int[Tensor, "...  batch_size sequence_length"] | None = None,
         stop_layer_index: int = 0
     ) -> Float[Tensor, "... batch_size sequence_length vocab_size"]:
-        propagate: Float[Tensor, "... batch_size sequence_length d_model"] = (
-            self.token_embeddings(in_indices)
-        )
+        with record_function("token_embeddings"):
+            propagate: Float[Tensor, "... batch_size sequence_length d_model"] = (
+                self.token_embeddings(in_indices)
+            )
         for layer_index, layer in enumerate(self.layers):
             if stop_layer_index > 0 and layer_index >= stop_layer_index:
                 break
-            propagate = layer(propagate, token_positions=token_positions)
-        return self.lm_head(self.ln_final(propagate))
+            with record_function("layer"):
+                propagate = layer(propagate, token_positions=token_positions)
+        with record_function("lm_head"):
+            return self.lm_head(self.ln_final(propagate))

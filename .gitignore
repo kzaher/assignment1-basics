@@ -169,3 +169,5 @@ experiments
 data
 
 .devcontainer/.env
+
+trace.json

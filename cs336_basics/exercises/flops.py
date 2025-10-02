@@ -1,10 +1,14 @@
+# %%
 from __future__ import annotations
 from cs336_basics.nn import linear
 from cs336_basics.nn import transformer_lm
+from cs336_basics.pretraining import configuration
+from cs336_basics import extensions
 from torch import nn
 import pandas as pd
 import torch
 import numpy as np
+import json
 
 import importlib
 
@@ -105,7 +109,7 @@ class FlopCounter:
             input_sizes = recorded_input_data["input_sizes"]
 
             if not input_sizes:
-                return 
+                return
             (input_size,) = input_sizes
             multiplication_factor = input_size
             total = 2 * multiplication_factor
@@ -145,9 +149,27 @@ class FlopCounter:
         self.recorded_input_data.clear()
 
 
+exp_path = "/workspace/cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
+with open(exp_path, "rt") as f:
+    exp_configuration_instance = configuration.PretrainingConfiguration(
+        output_path="",
+        checkpoint=0,
+        training_loop=configuration.LlmPretrainingTrainingLoopConfiguration.from_dict(
+            json.load(f)
+        ),
+    )
+
 for k, params in gpt2s.items():
     print(f"Model: {k}")
-    instance = transformer_lm.TransformerLm(**params)
+    exp_configuration_instance = extensions.replace_recursively(
+        exp_configuration_instance, lambda x: x.training_loop.transformer_llm.dtype, torch.float32
+    )
+    exp_configuration_instance = extensions.replace_recursively(
+        exp_configuration_instance, lambda x: x.training_loop.transformer_llm.device, 'cpu'
+    )
+    instance = transformer_lm.TransformerLm(
+        exp_configuration_instance.training_loop.transformer_llm
+    )
     count_parameters = pd.DataFrame(
         [
             {"name": name, "params": np.prod(param.size())}
@@ -191,3 +213,5 @@ for k, params in gpt2s.items():
     # Clean up hooks
     flop_counter.cleanup()
     print("-" * 50)
+
+# %%

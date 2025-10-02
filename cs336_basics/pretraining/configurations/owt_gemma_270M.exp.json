@@ -1,5 +1,5 @@
 {
-    "name": "owt_gemma_270M",
+    "name": "owt_gemma_270M_bench",
     "training_data_path": "data/owt_train.txt",
     "validation_data_path": "data/owt_valid.txt",
     "checkpoint_persist_modulus": 500,
@@ -17,17 +17,25 @@
         "dtype_str": "bfloat16",
         "use_bias": false,
         "experiments": {
-            "zero_output": true
+            "zero_output": true,
+            "ff_type": "silu_monotonic_lu",
+            "qk_norm": true,
+            "optimizer_type": "muon_aggressive_with_adam",
+            "head_lr_mul": 5.0,
+            "embeddings_lr_mul": 5.0
         }
     },
     "annealing_configuration": {
         "zero_iters": 0,
-        "warmup_iters": 200,
-        "use_cosine_rampup": false,
-        "max_learning_rate": 0.001,
-        "min_learning_rate": 0.0001,
+        "warmup_iters": 100,
+        "warmup_iters2": 100,
+        "use_cosine_rampup": true,
+        "max_learning_rate": 0.008,
+        "min_learning_rate": 0.0008,
         "ff_max_learning_rate": 0.001,
         "ff_min_learning_rate": 0.0001,
+        "max_learning_rate2": 0.001,
+        "min_learning_rate2": 0.0001,
         "safe_max_learning_rate": 0.001,
         "safe_min_learning_rate": 0.0001,
         "cosine_cycle_iters": 4000
@@ -48,6 +56,6 @@
     "context_length": 256,
     "batch_size": 256,
     "initial_max_l2_norm": 200000000,
-    "max_iterations": 10000,
-    "time_limit_in_seconds": 3600
+    "max_iterations": 2,
+    "time_limit_in_seconds": 5940
 }

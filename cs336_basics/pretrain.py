@@ -38,9 +38,11 @@ import dataclasses
 import logging
 import pandas as pd
 import subprocess
+import torch
 
 extensions.setup_default_logging()
 
+torch.backends.cuda.matmul.allow_tf32 = True
 
 def run_configuration(
     configuration_instance: configuration.PretrainingConfiguration, dry_run: bool
@@ -194,10 +196,13 @@ def main(argv: abc.Sequence[str]):
             )
         exp_configuration_instance = dataclasses.replace(
             exp_configuration_instance,
-            suffix=extensions.json_diff_as_csv(
-                dataclasses.asdict(configuration_instance),
-                dataclasses.asdict(exp_configuration_instance),
-            ),
+            suffix=','.join([
+                f'{diff[0].split(".")[-1]}={diff[1]}'
+                for diff in extensions.diff_json(
+                    dataclasses.asdict(configuration_instance),
+                    dataclasses.asdict(exp_configuration_instance),
+                )
+            ]),
         )
         logging.info(
             "exp_configuration=%s",

@@ -22,4 +22,4 @@ class CrossEntropyLoss(nn.Module):
           ),
           dim=-1,
         ) + torch.log(torch.sum(torch.exp(normalized_o), dim=-1))
-        return loss.sum(-1).sum(-1)
+        return loss.sum(-1).sum(-1) / (loss.size(-1) * loss.size(-2))
