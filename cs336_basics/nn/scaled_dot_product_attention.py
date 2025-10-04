@@ -18,7 +18,7 @@ class ScaledDotProductAttention(nn.Module):
         V: Float[Tensor, " ... seq_length d_v"],
         mask: Bool[Tensor, " ... seq_length seq_length"] | None = None,
     ) -> Float[Tensor, " ... seq_length d_v"]:
-        search = torch.einsum("...qd,...kd->...qk", Q, K) / math.sqrt(Q.size(-1))
+        search: Float[Tensor, " ... seq_length seq_length"] = (Q @ K.mT) / math.sqrt(Q.size(-1))
         if mask is not None:
             search = torch.where(~mask, -torch.inf, search)
-        return torch.einsum("...qk,...kd->...qd", self.softmax(search), V)
+        return self.softmax(search) @ V

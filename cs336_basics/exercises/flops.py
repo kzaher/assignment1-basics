@@ -159,13 +159,17 @@ with open(exp_path, "rt") as f:
         ),
     )
 
-for k, params in gpt2s.items():
-    print(f"Model: {k}")
+# for k, params in gpt2s.items():
+if True:
     exp_configuration_instance = extensions.replace_recursively(
-        exp_configuration_instance, lambda x: x.training_loop.transformer_llm.dtype, torch.float32
+        exp_configuration_instance,
+        lambda x: x.training_loop.transformer_llm.dtype,
+        torch.float32,
     )
     exp_configuration_instance = extensions.replace_recursively(
-        exp_configuration_instance, lambda x: x.training_loop.transformer_llm.device, 'cpu'
+        exp_configuration_instance,
+        lambda x: x.training_loop.transformer_llm.device,
+        "cpu",
     )
     instance = transformer_lm.TransformerLm(
         exp_configuration_instance.training_loop.transformer_llm
@@ -196,7 +200,12 @@ for k, params in gpt2s.items():
                 total *= size
             return {f"Gflop": total / 1e9}
 
-    x = torch.zeros((1, params["max_sequence_length"])).to(torch.int32)
+    x = torch.zeros(
+        (
+            1,
+            exp_configuration_instance.training_loop.transformer_llm.max_sequence_length,
+        )
+    ).to(torch.int32)
     instance.forward(x)
 
     print("\nModel Structure:")

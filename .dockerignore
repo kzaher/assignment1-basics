@@ -62,3 +62,5 @@ wandb/
 
 # Documentation
 docs/_build/
+
+trace*.json

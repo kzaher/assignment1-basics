@@ -39,18 +39,25 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 
 class Pretrainer:
-    def __init__(self, configuration: configuration.PretrainingConfiguration):
+    def __init__(self, configuration: configuration.PretrainingConfiguration, profile=True):
         self._configuration = configuration
         lm_configuration = configuration.training_loop.transformer_llm
         self._i = 0
         model = transformer_lm.TransformerLm(lm_configuration)
         model.register_buffer("start_time", torch.tensor(time.time()))
+        self.profile = profile
 
         # Keep uncompiled model for validation to avoid cache invalidation
         self._uncompiled_model = model
 
         # Compile the model with optimizations for training
-        self._model = model # torch.compile(model, mode="default")
+        self._model = torch.compile(model, mode="default") if not profile else model
+        if profile:
+            for name, module in self._model.named_modules():
+                def hook_fn(module, grad_input, grad_output, name=name):
+                    with record_function(f"{name}_backward"):
+                        pass
+                module.register_full_backward_hook(hook_fn)
         self._optimizer, self._optimizer_configuration = (
             self._configuration.training_loop.create_optimizer(
                 self._model.named_parameters()
@@ -610,21 +617,27 @@ class Pretrainer:
                 f"   Run: https://wandb.ai/ante-materija-gmbh/{project_name}/runs/{run_id}"
             )
 
-            activities = [ProfilerActivity.CPU]
-            device = 'cpu'
-            if torch.cuda.is_available():
-                device = "cuda"
-                activities += [ProfilerActivity.CUDA]
-            sort_by_keyword = device + "_time_total"
-            with profile(activities=activities, record_shapes=True) as prof:
-                with record_function("train"):
-                    self._run_training_loop(
+            if self.profile:
+                activities = [ProfilerActivity.CPU]
+                device = 'cpu'
+                if torch.cuda.is_available():
+                    device = "cuda"
+                    activities += [ProfilerActivity.CUDA]
+                sort_by_keyword = device + "_time_total"
+                with profile(activities=activities, record_shapes=True) as prof:
+                    with record_function("train"):
+                        self._run_training_loop(
+                            tokenized_training_data=tokenized_training_data,
+                            tokenized_validation_data=tokenized_validation_data,
+                        )
+                
+                logger.info('Performance Table\n%s', prof.key_averages().table(sort_by=sort_by_keyword, row_limit=100))
+                logger.info('Performance Table\n%s', prof.key_averages(group_by_input_shape=True).table(sort_by=sort_by_keyword, row_limit=100))
+                trace_output_path = '/tmp/trace.json'
+                logger.info("Writing chrome trace to %s", trace_output_path)
+                prof.export_chrome_trace(trace_output_path)
+            else:
+                self._run_training_loop(
                         tokenized_training_data=tokenized_training_data,
                         tokenized_validation_data=tokenized_validation_data,
                     )
-            
-            logger.info('Performance Table\n%s', prof.key_averages().table(sort_by=sort_by_keyword, row_limit=100))
-            logger.info('Performance Table\n%s', prof.key_averages(group_by_input_shape=True).table(sort_by=sort_by_keyword, row_limit=100))
-            trace_output_path = '/tmp/trace.json'
-            logger.info("Writing chrome trace to %s", trace_output_path)
-            prof.export_chrome_trace(trace_output_path)

@@ -139,7 +139,7 @@ function load_vast_ai() {
 function run_vast() {
   load_vast_ai
   RUN_SETUP_CMD="" \
-  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod `vastai ssh-url ${VASTAI_ID}`" \
+  RUN_SSH_CMD="ssh -t -i ~/.ssh/id_runpod $VASTAI_SSH" \
   RUN_SHELL_STARTUP="${RUN_SHELL_STARTUP:-bash -c}" \
   RUN_WORKDIR="${POD_WORKDIR}" \
   run_generic "$@"

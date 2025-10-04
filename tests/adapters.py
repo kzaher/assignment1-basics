@@ -293,9 +293,7 @@ def convert_attention_weights(
             v = state_dict.pop(f"layers.{i}.attn.v_proj.weight")
             qkv_proj = torch.concat([q, k, v], dim=-2)
             state_dict = state_dict | {
-                f"layers.{i}.attn.qkv_proj.weight": torch.stack(
-                    torch.chunk(qkv_proj, chunks=qkv_proj.size(-2) // d_head), dim=-3
-                )
+                f"layers.{i}.attn.qkv_proj.weight": qkv_proj
             }
         return state_dict
     elif "attn.q_proj.weight" in state_dict:
@@ -305,9 +303,7 @@ def convert_attention_weights(
         qkv_proj = torch.concat([q, k, v], dim=-2)
 
         return state_dict | {
-            "attn.qkv_proj.weight": torch.stack(
-                torch.chunk(qkv_proj, chunks=qkv_proj.size(-2) // d_head), dim=-3
-            )
+            "attn.qkv_proj.weight": qkv_proj
         }
     else:
         q = state_dict.pop("q_proj.weight")
@@ -316,9 +312,7 @@ def convert_attention_weights(
         qkv_proj = torch.concat([q, k, v], dim=-2)
 
         return state_dict | {
-            "qkv_proj.weight": torch.stack(
-                torch.chunk(qkv_proj, chunks=qkv_proj.size(-2) // d_head), dim=-3
-            )
+            "qkv_proj.weight": qkv_proj
         }
 
 

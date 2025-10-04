@@ -34,8 +34,8 @@ class Rope(nn.Module):
         sin: Float[torch.Tensor, "max_seq_len d_k2"] = (
             torch.sin(thetas).to(dtype).to(device=device)
         )
-        self.register_buffer("cos", cos, persistent=False)
-        self.register_buffer("sin", sin, persistent=False)
+        self.cos = cos
+        self.sin = sin
 
     def forward(
         self,
@@ -54,24 +54,19 @@ class Rope(nn.Module):
         if self.packed_rope:
             x = separate(x)
 
-        dim0, dim1 = torch.chunk(x, chunks=2, dim=-1)
+        dim0, dim1 = x.view(*x.shape[:-1], 2, -1).unbind(-2)
         cos_collected: Float[torch.Tensor, "... seq_len d_k2"] = (
-            self.cos[token_positions, :]
+            self.cos[token_positions, ...]
             if token_positions is not None
             else self.cos[: x.size(-2), ...]
         )
         sin_collected: Float[torch.Tensor, "... seq_len d_k2"] = (
-            self.sin[token_positions, :]
+            self.sin[token_positions, ...]
             if token_positions is not None
             else self.sin[: x.size(-2), ...]
         )
-        result = torch.cat(
-            [
-                dim0 * cos_collected - dim1 * sin_collected,
-                dim0 * sin_collected + dim1 * cos_collected,
-            ],
-            dim=-1,
-        )
+
+        result = torch.cat((dim0 * cos_collected - dim1 * sin_collected, dim0 * sin_collected + dim1 * cos_collected), dim=-1)
 
         if self.packed_rope:
             result = interleave(result)
