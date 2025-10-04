@@ -170,4 +170,5 @@ data
 
 .devcontainer/.env
 
-trace.json
+trace*.json
+.DS_Store

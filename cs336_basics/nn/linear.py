@@ -37,9 +37,7 @@ class Linear(nn.Module):
     def forward(
         self, x: Float[torch.Tensor, "... in_features"]
     ) -> Float[torch.Tensor, "... out_features"]:
-        x = x.unsqueeze(dim=-1).contiguous()
-        x = self.weight @ x
-        x = x.squeeze(dim=-1)
+        x =  x @ self.weight.mT
         if self._use_bias:
             x = self.bias + x
         if len(self._complete_dimension) > 1:

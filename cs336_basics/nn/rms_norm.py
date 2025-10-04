@@ -1,6 +1,9 @@
+from typing import Any, Mapping
 from torch import nn
 import torch
 from jaxtyping import Float
+import torch.linalg
+import math
 
 
 class RmsNorm(nn.Module):
@@ -12,7 +15,9 @@ class RmsNorm(nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
+        self.weight = torch.nn.Parameter(
+            torch.ones(d_model, device=device, dtype=dtype)
+        )
         self.eps = torch.tensor(eps, device=device, dtype=torch.float32)
         self.dtype = dtype
         self.d_model = d_model
@@ -20,10 +25,17 @@ class RmsNorm(nn.Module):
     def forward(
         self, x: Float[torch.Tensor, "... d_model"]
     ) -> Float[torch.Tensor, "... d_model"]:
+        # x_at_least32 = x.to(torch.float32)
+        # inverse = torch.linalg.vector_norm(x, ord=2, dim=-1, keepdim=True).clamp_min(math.sqrt(self.eps)) / math.sqrt(self.d_model)
+        # return (self.weight * x_at_least32 / inverse).to(self.dtype)
+
         x_at_least32 = x.to(torch.float32)
-        rms_inverse = 1.0 / torch.sqrt(
-            torch.einsum("...d,...d->...", x_at_least32, x_at_least32) / self.d_model
-            + self.eps
-        )
-        x = torch.einsum("...d,...,d->...d", x, rms_inverse, self.weight).to(self.dtype)
-        return x
+        return (
+            self.weight
+            * x_at_least32
+            / torch.sqrt(
+                torch.sum(x_at_least32.square(), dim=-1, keepdim=True)
+                / self.d_model
+                +self.eps
+            )
+        ).to(self.dtype)

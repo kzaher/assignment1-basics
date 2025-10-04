@@ -79,6 +79,7 @@ class MultiHeadSelfAttention(nn.Module):
         with record_function("mhsa"):
             with record_function("input_proj"):
                 input_proj = self.qkv_proj(x)
+            # Float[Tensor, "... sequence_length head head_dim"]
             q, k, v = torch.split(
                 input_proj,
                 [
@@ -88,23 +89,10 @@ class MultiHeadSelfAttention(nn.Module):
                 ],
                 dim=-2,
             )
-            q_heads = einops.rearrange(
-                q,
-                "... sequence_length head head_dim->... head sequence_length head_dim",
-                head=self.num_query_heads,
-                head_dim=self.d_head,
-            )
-            k_heads = einops.rearrange(
-                k,
-                "... sequence_length head head_dim->... head sequence_length head_dim",
-                head=self.num_key_value_heads,
-                head_dim=self.d_head,
-            )
-            v_heads = einops.rearrange(
-                v,
-                "... sequence_length head head_dim->... head sequence_length head_dim",
-                head=self.num_key_value_heads,
-            )
+            q_heads: Float[Tensor, "... head sequence_length head_dim"] = torch.transpose(q, dim0=-3, dim1=-2)
+            k_heads = torch.transpose(k, dim0=-3, dim1=-2)
+            v_heads = torch.transpose(v, dim0=-3, dim1=-2)
+
             if self.experiments.qk_norm:
                 q_heads = self.qk_norm_g * F.normalize(q_heads, p=2, dim=-1)
                 k_heads = self.qk_norm_g * F.normalize(k_heads, p=2, dim=-1)
@@ -127,11 +115,11 @@ class MultiHeadSelfAttention(nn.Module):
                 torch.ones((sequence_length, sequence_length), device=self.device)
             ).to(torch.bool)
             with record_function("output_proj"):
-                return self.output_proj(
-                    einops.rearrange(
-                        self.scaled_dot_product_attention(
+                # Float[Tensor, "... head sequence_length per_head"]
+                scaled_dot_product_hsd = self.scaled_dot_product_attention(
                             Q=q_heads, K=k_heads, V=v_heads, mask=causal_mask
-                        ),
-                        "... head sequence_length per_head -> ... sequence_length (head per_head)",
-                    )
+                        )
+                return self.output_proj(
+                    # Float[Tensor, "... sequence_length (head per_head)"
+                    torch.transpose(scaled_dot_product_hsd, dim0=-3, dim1=-2).flatten(start_dim=-2)
                 )

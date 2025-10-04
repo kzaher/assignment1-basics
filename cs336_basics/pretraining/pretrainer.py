@@ -2,7 +2,7 @@
 RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --exp_path=cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
 pushrun podscreen bash -c  "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && down"
 
-RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --exp_path=cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
+RUN="WANDB_API_KEY=${WANDB_API_KEY} VAST_AI_API_KEY=${VAST_AI_API_KEY} uv run --group=cuda cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --exp_path=cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
 pushrun vasttmux bash -c "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && downy"
 """
 from cs336_basics.pretraining import configuration
@@ -39,7 +39,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 
 class Pretrainer:
-    def __init__(self, configuration: configuration.PretrainingConfiguration, profile=True):
+    def __init__(self, configuration: configuration.PretrainingConfiguration, profile=False):
         self._configuration = configuration
         lm_configuration = configuration.training_loop.transformer_llm
         self._i = 0
@@ -52,12 +52,6 @@ class Pretrainer:
 
         # Compile the model with optimizations for training
         self._model = torch.compile(model, mode="default") if not profile else model
-        if profile:
-            for name, module in self._model.named_modules():
-                def hook_fn(module, grad_input, grad_output, name=name):
-                    with record_function(f"{name}_backward"):
-                        pass
-                module.register_full_backward_hook(hook_fn)
         self._optimizer, self._optimizer_configuration = (
             self._configuration.training_loop.create_optimizer(
                 self._model.named_parameters()
@@ -464,7 +458,10 @@ class Pretrainer:
                             device=self._configuration.training_loop.transformer_llm.device,
                         ),
                     )
-                with record_function("backward"):
+                if self.profile:
+                    with torch.autograd.profiler.emit_nvtx():
+                        loss.backward()
+                else:
                     loss.backward()
                 with record_function("clipping"):
                     (clipped_gradients, total_gradient_value) = (
