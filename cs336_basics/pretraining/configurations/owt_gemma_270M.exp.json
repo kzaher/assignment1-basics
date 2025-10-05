@@ -18,7 +18,7 @@
         "use_bias": false,
         "experiments": {
             "zero_output": true,
-            "ff_type": "silu_monotonic_lu",
+            "ff_type": "silu",
             "qk_norm": true,
             "optimizer_type": "muon_aggressive_with_adam",
             "head_lr_mul": 5.0,

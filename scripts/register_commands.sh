@@ -128,7 +128,7 @@ function run_pod() {
 }
 
 function load_vast_ai() {
-  export VASTAI_ID=${VASTAI_ID:-$(vastai show instances -q | head -n1)}
+  export VASTAI_ID=${VASTAI_ID:-$(vastai show instances --raw | jq '.[] | select(.actual_status == "running") | .id' | head -n1)}
   if [[ "$VASTAI_CACHED_ID" == "$VASTAI_ID" ]]; then
     return 0
   fi
@@ -371,7 +371,7 @@ function down_this_vast() {
   if [[ -n "$VAST_AI_API_KEY" ]]; then
     vastai set api-key $VAST_AI_API_KEY
   fi
-  echo vastai stop instance $(echo "$VAST_CONTAINERLABEL" | cut -d '.' -f 2)
+  vastai stop instance $(echo "$VAST_CONTAINERLABEL" | cut -d '.' -f 2)
 }
 
 function down_this() {

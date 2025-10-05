@@ -2,9 +2,6 @@ from typing import Any, Mapping
 from torch import nn
 import torch
 from jaxtyping import Float
-import torch.linalg
-import math
-
 
 class RmsNorm(nn.Module):
     def __init__(
@@ -25,10 +22,6 @@ class RmsNorm(nn.Module):
     def forward(
         self, x: Float[torch.Tensor, "... d_model"]
     ) -> Float[torch.Tensor, "... d_model"]:
-        # x_at_least32 = x.to(torch.float32)
-        # inverse = torch.linalg.vector_norm(x, ord=2, dim=-1, keepdim=True).clamp_min(math.sqrt(self.eps)) / math.sqrt(self.d_model)
-        # return (self.weight * x_at_least32 / inverse).to(self.dtype)
-
         x_at_least32 = x.to(torch.float32)
         return (
             self.weight

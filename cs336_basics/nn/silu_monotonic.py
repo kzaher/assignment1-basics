@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class SiLUELUMonotonicFn(torch.autograd.Function):
     @staticmethod
@@ -15,14 +14,15 @@ class SiLUELUMonotonicFn(torch.autograd.Function):
         input, silu_out = ctx.saved_tensors
 
         # SiLU derivative: σ(x) + x * σ(x) * (1 - σ(x))
-        sig = torch.sigmoid(input)
-        silu_grad = sig + input * sig * (1 - sig)
+        sig = silu_out
+        silu_grad = sig
+        silu_grad.addcmul_(input, sig * (1 - sig), value=1)
 
         # Condition: if output < 0 and upstream gradient < 0 → use ELU gradient
-        condition = (silu_grad < 0) & (grad_output < 0)
+        grad_output.mul_((silu_grad < 0) & (grad_output < 0) * -1)
 
-        grad_input = torch.where(condition, grad_output * -silu_grad, grad_output * silu_grad)
-        return grad_input, None
+        grad_output.mul_(silu_grad)
+        return grad_output, None
 
 class SiLUELUMonotonic(nn.Module):
     def __init__(self):

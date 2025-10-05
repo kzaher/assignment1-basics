@@ -6,11 +6,10 @@ from torch import nn
 import torch
 from torch import Tensor
 from jaxtyping import Float, Int
-import einops
-import numpy as np
 import math
-from torch.nn import functional as F
 from torch.profiler import record_function
+import torch.linalg
+
 
 class MultiHeadSelfAttention(nn.Module):
     def __init__(
@@ -25,7 +24,8 @@ class MultiHeadSelfAttention(nn.Module):
         theta: float | None = None,
         device: torch.types.Device = None,
         dtype: torch.dtype | None = None,
-        packed_rope = False
+        packed_rope=False,
+        qk_norm_eps=1e-8,
     ):
         super().__init__()
         self.d_model = d_model
@@ -33,6 +33,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.num_key_value_heads = num_key_value_heads
         self.device = device
         self.d_head = d_head
+        self.qk_norm_eps = qk_norm_eps
         assert num_query_heads % num_key_value_heads == 0
         self.replicate_key_value_heads = num_query_heads // num_key_value_heads
         assert d_model % num_query_heads == 0
@@ -43,7 +44,7 @@ class MultiHeadSelfAttention(nn.Module):
                 max_seq_len=max_sequence_length,
                 device=device,
                 dtype=dtype,
-                packed_rope=packed_rope
+                packed_rope=packed_rope,
             )
         else:
             self.rope = None
@@ -85,17 +86,33 @@ class MultiHeadSelfAttention(nn.Module):
                 [
                     self.num_query_heads,
                     self.num_key_value_heads,
-                    self.num_key_value_heads
+                    self.num_key_value_heads,
                 ],
                 dim=-2,
             )
-            q_heads: Float[Tensor, "... head sequence_length head_dim"] = torch.transpose(q, dim0=-3, dim1=-2)
+            q_heads: Float[Tensor, "... head sequence_length head_dim"] = (
+                torch.transpose(q, dim0=-3, dim1=-2)
+            )
             k_heads = torch.transpose(k, dim0=-3, dim1=-2)
             v_heads = torch.transpose(v, dim0=-3, dim1=-2)
 
             if self.experiments.qk_norm:
-                q_heads = self.qk_norm_g * F.normalize(q_heads, p=2, dim=-1)
-                k_heads = self.qk_norm_g * F.normalize(k_heads, p=2, dim=-1)
+                q_heads = (
+                    self.qk_norm_g
+                    * q_heads
+                    / (
+                        torch.linalg.vector_norm(q_heads, ord=2, dim=-1, keepdim=True)
+                        + self.qk_norm_eps
+                    )
+                )
+                k_heads = (
+                    self.qk_norm_g
+                    * k_heads
+                    / (
+                        torch.linalg.vector_norm(k_heads, ord=2, dim=-1, keepdim=True)
+                        + self.qk_norm_eps
+                    )
+                )
 
             if self.replicate_key_value_heads > 1 or True:
                 k_heads = torch.repeat_interleave(
@@ -114,12 +131,15 @@ class MultiHeadSelfAttention(nn.Module):
             causal_mask = torch.tril(
                 torch.ones((sequence_length, sequence_length), device=self.device)
             ).to(torch.bool)
-            with record_function("output_proj"):
+            with record_function('scaled_dot_product_attention'):
                 # Float[Tensor, "... head sequence_length per_head"]
                 scaled_dot_product_hsd = self.scaled_dot_product_attention(
-                            Q=q_heads, K=k_heads, V=v_heads, mask=causal_mask
-                        )
+                    Q=q_heads, K=k_heads, V=v_heads, mask=causal_mask
+                )
+            with record_function("output_proj"):
                 return self.output_proj(
                     # Float[Tensor, "... sequence_length (head per_head)"
-                    torch.transpose(scaled_dot_product_hsd, dim0=-3, dim1=-2).flatten(start_dim=-2)
+                    torch.transpose(scaled_dot_product_hsd, dim0=-3, dim1=-2).flatten(
+                        start_dim=-2
+                    )
                 )

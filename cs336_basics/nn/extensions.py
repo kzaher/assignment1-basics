@@ -359,3 +359,24 @@ def record_weights(
             continue
         args |= weight_recorder.calculate_histogram(name=name, x=param).logs("weight")
     return args
+
+def profile_register_backward_hook(name, module):
+    module_type = type(module)
+    pre_module_function = f'PreModule::{name}:{module_type.__module__}.{module_type.__name__}'
+    post_module_function = f'PostModule::{name}:{module_type.__module__}.{module_type.__name__}'
+
+    # define register_full_backward_pre_hook function
+    def bwd_pre_hook_print(self, output):
+        with torch.profiler.record_function(pre_module_function):
+            return output
+
+    # define register_full_backward_hook function
+    def bwd_hook_print(self, input, output):
+        with torch.profiler.record_function(post_module_function):
+            torch.cuda.synchronize()
+            return input
+
+    # register hooks
+    module.register_full_backward_pre_hook(bwd_pre_hook_print)
+    module.register_full_backward_hook(bwd_hook_print)
+    return module

@@ -3,7 +3,7 @@ RUN="uv run cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretrain
 pushrun podscreen bash -c  "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && down"
 
 RUN="WANDB_API_KEY=${WANDB_API_KEY} VAST_AI_API_KEY=${VAST_AI_API_KEY} uv run --group=cuda cs336_basics/pretrain.py  --configuration_path=cs336_basics/pretraining/configurations/owt_gemma_270M.json --exp_path=cs336_basics/pretraining/configurations/owt_gemma_270M.exp.json"
-pushrun vasttmux bash -c "type down && $RUN 2>&1 | tee last_output.txt; sleep 30 && downy"
+pushrun vasttmux bash -c "type down && $RUN 2>&1 | tee last_output.txt; sleep 3000 && down"
 """
 from cs336_basics.pretraining import configuration
 from cs336_basics.nn import extensions
@@ -52,6 +52,11 @@ class Pretrainer:
 
         # Compile the model with optimizations for training
         self._model = torch.compile(model, mode="default") if not profile else model
+
+        if self.profile:
+            for name, module in self._uncompiled_model.named_modules():
+                extensions.profile_register_backward_hook(name, module)
+
         self._optimizer, self._optimizer_configuration = (
             self._configuration.training_loop.create_optimizer(
                 self._model.named_parameters()
@@ -458,10 +463,7 @@ class Pretrainer:
                             device=self._configuration.training_loop.transformer_llm.device,
                         ),
                     )
-                if self.profile:
-                    with torch.autograd.profiler.emit_nvtx():
-                        loss.backward()
-                else:
+                with record_function("backward"):
                     loss.backward()
                 with record_function("clipping"):
                     (clipped_gradients, total_gradient_value) = (

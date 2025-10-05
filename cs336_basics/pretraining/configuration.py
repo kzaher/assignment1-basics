@@ -78,7 +78,10 @@ class ArchitectureExperiments:
     ):
         match self.rms_norm:
             case None:
-                return rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
+                # return rms_norm.RmsNorm(d_model=d_model, device=device, dtype=dtype)
+                return torch.nn.RMSNorm(normalized_shape=d_model, eps=1e-5, device=device)
+            case 'torch_rms':
+                return torch.nn.RMSNorm(normalized_shape=-1, eps=1e-5, device=device)
             case "dyt" | "dyt_full":
                 d_alpha = {"dyt": 1, "dyt_full": d_model}.get(self.rms_norm, None)
                 assert d_alpha
@@ -106,6 +109,15 @@ class ArchitectureExperiments:
     ):
         match self.ff_type:
             case None:
+                # return nonlinear.ActivatedLu(
+                #     d_model=d_model,
+                #     d_ff=d_hidden,
+                #     use_bias=use_bias,
+                #     device=device,
+                #     dtype=dtype,
+                #     zero_output=self.zero_output or False,
+                #     activation=nonlinear.Swish(),
+                # )
                 return nonlinear.ActivatedLu(
                     d_model=d_model,
                     d_ff=d_hidden,
@@ -113,7 +125,17 @@ class ArchitectureExperiments:
                     device=device,
                     dtype=dtype,
                     zero_output=self.zero_output or False,
-                    activation=nonlinear.Swish(),
+                    activation=torch.nn.SiLU(),
+                )
+            case 'silu':
+                return nonlinear.ActivatedLu(
+                    d_model=d_model,
+                    d_ff=d_hidden,
+                    use_bias=use_bias,
+                    device=device,
+                    dtype=dtype,
+                    zero_output=self.zero_output or False,
+                    activation=torch.nn.SiLU(),
                 )
             case "silu_monotonic_lu":
                 return nonlinear.ActivatedLu(

@@ -4,8 +4,6 @@ from cs336_basics.nn import linear
 from cs336_basics.nn import atan
 from cs336_basics.nn import extensions
 from jaxtyping import Float
-import einops
-import functools
 
 
 class ConjunctionFeedForward(nn.Module):
